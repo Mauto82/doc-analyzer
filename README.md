@@ -49,19 +49,13 @@ cd doc-analyzer
 cp .env.example .env
 ```
 
-3. Set up data directory with proper permissions:
+3. Build and start the application:
 ```bash
-mkdir -p ./data/chroma
-chmod -R 777 ./data
-```
-
-4. Build and start the application:
-```bash
-docker-compose build --no-cache
+docker-compose build
 docker-compose up -d
 ```
 
-5. Access the web interface at:
+4. Access the web interface at:
 ```
 http://localhost:8000
 ```
@@ -164,9 +158,7 @@ chunk_size=500  # Decrease this value
 chunk_overlap=100  # Adjust accordingly
 ```
 
-## Development
-
-### Local Development (without Docker)
+## Local Development (without Docker)
 
 1. Create a virtual environment:
 ```bash
@@ -234,6 +226,25 @@ The application consists of several components:
    - Stores document embeddings
    - Enables semantic search
    - Maintains document-query relevance
+
+## Running Tests
+
+Tests can be run using Docker:
+
+```bash
+# Run all tests
+docker-compose run test
+
+# Run specific test file
+docker-compose run test pytest tests/unit/test_app.py -v
+
+# Run tests with coverage
+docker-compose run test pytest --cov=src tests/
+
+# Interactive debug
+docker-compose run test bash
+pytest -v  # inside container
+```
 
 ## Contributing
 
