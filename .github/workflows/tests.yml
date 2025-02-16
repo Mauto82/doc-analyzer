@@ -9,7 +9,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Install Docker Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker-compose-plugin
+
       - name: Build and test with Docker
         run: |
-          docker-compose build
-          docker-compose run test
+          docker compose build
+          docker compose run testgit add .github/workflows/tests.yml
