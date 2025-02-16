@@ -91,7 +91,7 @@ DEEPSEEK_MODEL=deepseek-r1:1.5b
   - Change to `./data/chroma` for local development
 
 - `DEEPSEEK_MODEL`: DeepSeek model to use
-  - Available options: `deepseek-r1:1.5b`, `deepseek-r1:14b`
+  - Available options: `deepseek-r1:1.5b`, `deepseek-r1:14b`, etc
 
 ## Usage
 
