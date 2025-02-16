@@ -21,9 +21,14 @@ def process_and_query(file_obj, question):
     if file_obj is None:
         return "Please upload a PDF file"
 
+    if not file_obj.name.lower().endswith('.pdf'):
+        return "Please upload a PDF file"
+
     try:
-        # Process the PDF
         chunks = pdf_processor.process(file_obj)
+        return rag_processor.query(question, chunks)
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
 
         # Execute the query
         result = rag_processor.query(question, chunks)

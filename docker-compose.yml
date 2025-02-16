@@ -17,3 +17,11 @@ services:
       timeout: 10s
       retries: 3
     restart: unless-stopped
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./tests:/app/tests
+    command: pytest -v

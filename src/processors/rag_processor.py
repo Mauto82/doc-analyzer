@@ -18,6 +18,8 @@ class RAGProcessor:
         self.vectordb = None
 
     def query(self, question, chunks):
+        if not chunks:
+            raise ValueError("No document chunks provided")
         # Create or clear the vector database
         if self.vectordb is None:
             self.vectordb = Chroma(
