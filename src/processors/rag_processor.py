@@ -60,16 +60,15 @@ class RAGProcessor:
             host=f"http://{os.getenv('OLLAMA_HOST', 'localhost')}:{os.getenv('OLLAMA_PORT', '11434')}"
         )
 
-        prompt = f"""This text contains multiple fairy tales. Based on the following excerpts, answer the question.
-        First, identify which story or stories are relevant to the question.
-        Then, provide an answer using ONLY the information from the relevant parts.
-        If multiple stories mention the subject of the question, specify which story you're referring to.
+        prompt = f"""Based on the following document excerpts, answer the question.
+        Use ONLY the information provided in these excerpts to formulate your answer.
+        If the answer requires information from multiple sections, please specify which parts you're referencing.
 
-        Text excerpts: {context}
+        Document excerpts: {context}
 
         Question: {question}
 
-        Detailed answer (specify which story/stories you're referring to):"""
+        Please provide your answer in the same language as the question, using only information from the provided excerpts:"""
 
         response = client.chat(
             model=self.model_name,
