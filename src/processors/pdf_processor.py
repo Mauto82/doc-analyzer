@@ -6,8 +6,8 @@ import os
 class PDFProcessor:
     def __init__(self):
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=500,
-            chunk_overlap=100
+            chunk_size=int(os.getenv('CHUNK_SIZE', '1000')),
+            chunk_overlap=int(os.getenv('CHUNK_OVERLAP', '200'))
         )
 
     def process(self, file_obj):
