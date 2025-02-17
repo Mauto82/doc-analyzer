@@ -48,7 +48,10 @@ cp .env.example .env
 OLLAMA_HOST=host.docker.internal  # Use 'localhost' for local dev
 OLLAMA_PORT=11434
 CHROMA_DB_PATH=/app/data/chroma
-DEEPSEEK_MODEL=deepseek-r1:1.5b
+DEEPSEEK_MODEL=deepseek-r1:14b
+CHUNK_SIZE=1000
+CHUNK_OVERLAP=200
+PERSIST_VECTORDB=false
 ```
 
 3. Start application:
