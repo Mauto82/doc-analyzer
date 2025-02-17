@@ -4,13 +4,13 @@ A web application that analyzes PDF documents using DeepSeek R1 language model a
 
 ## Overview
 
-Doc Analyzer is a tool that allows users to:
+Doc Analyzer enables users to:
 - Upload PDF documents
-- Ask questions about the document content
-- Receive AI-generated responses based on the document's content
+- Ask questions about document content
+- Receive AI-generated responses based on document content
 - Process documents using state-of-the-art language models
 
-The application uses:
+The application leverages:
 - DeepSeek R1 for text generation and embeddings
 - ChromaDB for vector storage
 - LangChain for document processing
@@ -19,173 +19,102 @@ The application uses:
 ## Requirements
 
 - Docker and Docker Compose
-- Ollama installed on the host machine
-- At least 8GB of RAM
-- 20GB of free disk space
-- DeepSeek R1 1.5b (or later) model installed via Ollama
+- Ollama with DeepSeek R1 1.5b (or later) model
+- 8GB RAM minimum
+- 20GB disk space
 
-### Installing Ollama and DeepSeek
+### Installing Ollama
 
-1. Install Ollama following the official instructions for your OS:
+1. Install Ollama:
    - Linux: `curl https://ollama.ai/install.sh | sh`
-   - macOS: Download from https://ollama.ai
-   - Windows: Download from https://ollama.ai
+   - macOS/Windows: Download from https://ollama.ai
 
-2. Pull the DeepSeek model:
+2. Pull DeepSeek model:
 ```bash
 ollama pull deepseek-r1:1.5b
 ```
 
-## Installation
+## Quick Start with Docker
 
-1. Clone the repository:
+1. Clone and setup:
 ```bash
 git clone https://github.com/Mauto82/doc-analyzer
 cd doc-analyzer
-```
-
-2. Create the environment configuration:
-```bash
 cp .env.example .env
 ```
 
-3. Build and start the application:
-```bash
-docker-compose build
-docker-compose up -d
-```
-
-4. Access the web interface at:
-```
-http://localhost:8000
-```
-
-## Configuration
-
-The application can be configured through the `.env` file:
-
+2. Configure `.env`:
 ```env
-OLLAMA_HOST=host.docker.internal
+OLLAMA_HOST=host.docker.internal  # Use 'localhost' for local dev
 OLLAMA_PORT=11434
 CHROMA_DB_PATH=/app/data/chroma
 DEEPSEEK_MODEL=deepseek-r1:1.5b
 ```
 
-### Configuration Options
-
-- `OLLAMA_HOST`: Hostname for the Ollama service
-  - Use `host.docker.internal` for Docker Desktop
-  - Use `localhost` for local development
-  - Use the machine's IP for remote Ollama instances
-
-- `OLLAMA_PORT`: Port for the Ollama service (default: 11434)
-
-- `CHROMA_DB_PATH`: Path to store ChromaDB files
-  - Keep the default `/app/data/chroma` for Docker setup
-  - Change to `./data/chroma` for local development
-
-- `DEEPSEEK_MODEL`: DeepSeek model to use
-  - Available options: `deepseek-r1:1.5b`, `deepseek-r1:14b`, etc
-
-## Usage
-
-1. Open the web interface at `http://localhost:8000`
-
-2. Upload a PDF document:
-   - Click on the upload area or drag and drop a PDF file
-   - Wait for the upload to complete
-
-3. Ask questions:
-   - Type your question in the text input
-   - Click "Submit" or press Enter
-   - Wait for the AI-generated response
-
-4. Best practices:
-   - Use clear, specific questions
-   - Ask one question at a time
-   - For complex documents, start with general questions before specific ones
-   - Wait for each response before asking the next question
-
-## Troubleshooting
-
-### Database Write Permission Error
-
-If you encounter a "readonly database" error:
-
+3. Start application:
 ```bash
-# Stop the containers
-docker-compose down
-
-# Set correct permissions
-mkdir -p ./data/chroma
-chmod -R 777 ./data
-
-# Clean existing database files
-rm -rf ./data/chroma/*
-
-# Rebuild and restart
-docker-compose build --no-cache
+docker-compose build
 docker-compose up -d
 ```
 
-### Connection to Ollama Failed
+4. Access: http://localhost:8000
 
-If the application can't connect to Ollama:
+## Usage Guide
 
-1. Verify Ollama is running:
-```bash
-ollama list
-```
+1. **Upload Document**
+   - Click upload area or drag-and-drop PDF file
+   - Wait for processing completion
 
-2. Check the Ollama service:
-```bash
-curl http://localhost:11434/api/tags
-```
+2. **Ask Questions**
+   - Type your question in the text input
+   - Click "Submit" or press Enter
+   - Wait for AI-generated response
 
-3. Verify your `.env` configuration matches your Ollama setup
+3. **Best Practices**
+   - Use clear, specific questions
+   - Ask one question at a time
+   - For complex documents, start with general questions
+   - Wait for each response before asking next question
 
-### Memory Issues
+## Architecture
 
-If the application crashes or becomes unresponsive:
+The application consists of several components:
 
-1. Increase Docker memory limit:
-   - Docker Desktop: Preferences → Resources → Memory
-   - Recommended: At least 8GB
+### Web Interface (FastAPI + Gradio)
+- Handles file uploads and user interactions
+- Provides intuitive interface
+- Manages user sessions
 
-2. Reduce chunk size in `pdf_processor.py`:
-```python
-chunk_size=500  # Decrease this value
-chunk_overlap=100  # Adjust accordingly
-```
+### PDF Processor
+- Extracts text from PDF documents
+- Splits content into manageable chunks
+- Uses LangChain for document handling
 
-## Local Development (without Docker)
+### RAG Processor
+- Creates embeddings using DeepSeek
+- Stores vectors in ChromaDB
+- Retrieves relevant content for queries
+- Generates responses using DeepSeek
 
-1. Create a virtual environment:
+### Vector Store (ChromaDB)
+- Stores document embeddings
+- Enables semantic search
+- Maintains document-query relevance
+
+## Local Development
+
+### Without Docker
 ```bash
 python -m venv venv
 source venv/bin/activate  # or .\venv\Scripts\activate on Windows
-```
-
-2. Install dependencies:
-```bash
 pip install -r requirements.txt
-```
-
-3. Configure environment:
-```bash
-cp .env.example .env
-# Edit .env to use localhost instead of host.docker.internal
-```
-
-4. Start the application:
-```bash
+pip install -r requirements-dev.txt
+mkdir -p ./data/chroma
+chmod -R 777 ./data
 uvicorn src.app:app --reload
 ```
 
-### Development with Docker
-
-For development with Docker:
-
+### With Docker
 ```bash
 # Start with logs
 docker-compose up
@@ -198,78 +127,46 @@ docker-compose build
 
 # Restart services
 docker-compose restart
-
-# Stop all services
-docker-compose down
 ```
 
-## Architecture
+## Troubleshooting
 
-The application consists of several components:
-
-1. **Web Interface** (FastAPI + Gradio):
-   - Handles file uploads and user interactions
-   - Provides a simple, intuitive interface
-
-2. **PDF Processor**:
-   - Extracts text from PDF documents
-   - Splits content into manageable chunks
-   - Uses LangChain for document handling
-
-3. **RAG Processor**:
-   - Creates embeddings using DeepSeek
-   - Stores vectors in ChromaDB
-   - Retrieves relevant content for queries
-   - Generates responses using DeepSeek
-
-4. **Vector Store** (ChromaDB):
-   - Stores document embeddings
-   - Enables semantic search
-   - Maintains document-query relevance
-
-## Running Tests
-
-Tests can be run using Docker:
-
+### Database Issues
+If you get "readonly database" error in local development:
 ```bash
-# Run all tests
-docker-compose run test
+chmod -R 777 ./data
+rm -rf ./data/chroma/*
+```
 
-# Run specific test file
-docker-compose run test pytest tests/unit/test_app.py -v
+### Ollama Connection
+1. Verify Ollama is running: `ollama list`
+2. Check service: `curl http://localhost:11434/api/tags`
+3. Check `.env` configuration matches your setup
+4. For Docker Desktop users, ensure `host.docker.internal` is used
 
-# Run tests with coverage
-docker-compose run test pytest --cov=src tests/
-
-# Interactive debug
-docker-compose run test bash
-pytest -v  # inside container
+### Memory Issues
+- Docker Desktop: Increase memory limit (Preferences → Resources → Memory)
+- Recommended minimum: 8GB
+- If needed, reduce chunk size in `pdf_processor.py`:
+```python
+chunk_size=500  # Decrease if experiencing memory issues
+chunk_overlap=100
 ```
 
 ## Contributing
 
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Commit your changes: `git commit -am 'Add feature'`
-4. Push to the branch: `git push origin feature-name`
-5. Submit a Pull Request
+1. Fork repository
+2. Create feature branch: `git checkout -b feature-name`
+3. Commit changes: `git commit -am 'Add feature'`
+4. Push branch: `git push origin feature-name`
+5. Submit Pull Request
 
 ### Development Guidelines
-
 - Follow PEP 8 style guide
 - Add tests for new features
-- Update documentation as needed
+- Update documentation
 - Keep commits focused and clean
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- DeepSeek team for the language model
-- LangChain for the document processing framework
-- ChromaDB for the vector storage solution
-- FastAPI and Gradio for the web framework
+MIT License - see LICENSE file for details.
