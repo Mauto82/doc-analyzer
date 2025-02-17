@@ -1,9 +1,12 @@
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from .base.document_processor import DocumentProcessor
 import tempfile
 import os
 
-class PDFProcessor:
+class PDFProcessor(DocumentProcessor):
+    """PDF document processor implementation"""
+
     def __init__(self):
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=int(os.getenv('CHUNK_SIZE', '1000')),
