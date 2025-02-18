@@ -1,11 +1,11 @@
 # Doc Analyzer
 
-A web application that analyzes PDF documents using DeepSeek R1 language model and RAG (Retrieval-Augmented Generation) architecture.
+A web application that analyzes PDF, DOC, and DOCX documents using DeepSeek R1 language model and RAG (Retrieval-Augmented Generation) architecture.
 
 ## Overview
 
 Doc Analyzer enables users to:
-- Upload PDF documents
+- Upload PDF, DOC, and DOCX documents
 - Ask questions about document content
 - Receive AI-generated responses based on document content
 - Process documents using state-of-the-art language models
@@ -20,30 +20,30 @@ The application leverages:
 
 ```
 doc-analyzer/
-├── src/                               # Source code
-│   ├── app.py                         # Main FastAPI application
-│   └── processors/                    # Document processors
-│       ├── base/                      # Base classes
+├── src/                      # Source code
+│   ├── app.py               # Main FastAPI application
+│   └── processors/          # Document processors
+│       ├── base/            # Base classes
 │       │   └── document_processor.py
-│       ├── factory.py                 # Factory for processor creation
-│       ├── pdf_processor.py           # PDF document handling
-│       ├── word_processor.py          # Word document handling
-│       └── rag_processor.py           # RAG implementation
-├── tests/                             # Test files
-│   ├── processors/                    # Processor-specific tests
+│       ├── factory.py       # Factory for processor creation
+│       ├── pdf_processor.py # PDF document handling
+│       ├── word_processor.py # Word document handling
+│       └── rag_processor.py # RAG implementation
+├── tests/                   # Test files
+│   ├── processors/         # Processor-specific tests
 │   │   ├── test_base_processor.py
 │   │   ├── test_factory.py
 │   │   └── test_word_processor.py
-│   └── unit/                          # Unit tests
+│   └── unit/              # Unit tests
 │       ├── test_app.py
 │       └── test_rag_processor.py
-├── data/                              # Data directory
-│   └── chroma/                        # ChromaDB storage
-├── Dockerfile                         # Container definition
-├── docker-compose.yml                 # Container orchestration
-├── requirements.txt                   # Production dependencies
-├── requirements-dev.txt               # Development dependencies
-└── setup.py                           # Package setup
+├── data/                   # Data directory
+│   └── chroma/            # ChromaDB storage
+├── Dockerfile             # Container definition
+├── docker-compose.yml     # Container orchestration
+├── requirements.txt       # Production dependencies
+├── requirements-dev.txt   # Development dependencies
+└── setup.py              # Package setup
 ```
 
 ## Requirements
@@ -52,6 +52,10 @@ doc-analyzer/
 - Ollama with DeepSeek R1 1.5b (or later) model
 - 8GB RAM minimum
 - 20GB disk space
+- Additional system dependencies (managed by Docker):
+  - poppler-utils (for PDF processing)
+  - tesseract-ocr and libtesseract-dev (for text extraction)
+  - antiword and unrtf (for DOC/DOCX processing)
 
 ### Installing Ollama
 
@@ -95,7 +99,8 @@ docker-compose up -d
 ## Usage Guide
 
 1. **Upload Document**
-   - Click upload area or drag-and-drop PDF file
+   - Click upload area or drag-and-drop your document
+   - Supported formats: PDF, DOC, DOCX
    - Wait for processing completion
 
 2. **Ask Questions**
@@ -118,10 +123,15 @@ The application consists of several components:
 - Provides intuitive interface
 - Manages user sessions
 
-### PDF Processor
-- Extracts text from PDF documents
-- Splits content into manageable chunks
-- Uses LangChain for document handling
+### Document Processors
+- PDF Processor:
+  - Extracts text from PDF documents using PyMuPDF
+  - Splits content into manageable chunks
+  - Uses LangChain for document handling
+- Word Processor:
+  - Processes DOC files using antiword
+  - Handles DOCX files using python-docx
+  - Extracts text content for analysis
 
 ### RAG Processor
 - Creates embeddings using DeepSeek
@@ -185,6 +195,12 @@ rm -rf ./data/chroma/*
 chunk_size=500  # Decrease if experiencing memory issues
 chunk_overlap=100
 ```
+
+### Document Processing Issues
+- PDF files: Ensure the PDF is not password-protected
+- DOC files: File must be readable by antiword
+- DOCX files: File must be a valid Office Open XML format
+- If text extraction fails, try converting the document to PDF
 
 ## Contributing
 
