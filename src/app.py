@@ -49,38 +49,76 @@ def query_document(question, role):
         return f"An error occurred during querying: {str(e)}"
 
 # Create Gradio interface
-with gr.Blocks(title="DocAnalyzer") as interface:
+with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
     gr.Markdown("# DocAnalyzer\nAnalyze documents with DeepSeek R1")
 
     with gr.Row():
-        # Document upload section
-        with gr.Column():
-            file_input = gr.File(label="Upload a document", file_types=[".pdf", ".doc", ".docx"])
-            upload_button = gr.Button("Process Document")
-            upload_output = gr.Textbox(label="Upload Status")
+        # Left column - Chat section
+        with gr.Column(scale=2):
+            chatbot = gr.Chatbot(height=400)
+            with gr.Row():
+                with gr.Column(scale=3):
+                    question_input = gr.Textbox(
+                        show_label=False,
+                        placeholder="Ask a question about the document...",
+                        container=False
+                    )
+                with gr.Column(scale=2):
+                    role_input = gr.Dropdown(
+                        choices=list(ROLE_PROMPTS.keys()),
+                        value="default",
+                        label="Analysis Role"
+                    )
+            query_button = gr.Button("Send")
 
-        # Query section
-        with gr.Column():
-            question_input = gr.Textbox(label="Ask a question about the document", lines=2)
-            role_input = gr.Dropdown(
-                choices=list(ROLE_PROMPTS.keys()),
-                value="default",
-                label="Select Analysis Role"
+        # Right column - Document upload section
+        with gr.Column(scale=1):
+            file_input = gr.File(
+                label="Upload Document",
+                file_types=[".pdf", ".doc", ".docx"]
             )
-            query_button = gr.Button("Ask")
-            answer_output = gr.Textbox(label="Answer")
+            upload_button = gr.Button("Process Document")
+            upload_output = gr.Textbox(label="Status")
 
-    # Set up event handlers
+    def add_text(history, text, role):
+        if not text:
+            return history
+        history = history + [(text, None)]
+        return history
+
+    def bot_response(history, role):
+        if not history:
+            return history
+        user_message = history[-1][0]
+        bot_message = query_document(user_message, role)
+        history[-1] = (user_message, bot_message)
+        return history
+
+    # Event handlers
     upload_button.click(
         fn=process_document,
         inputs=[file_input],
         outputs=[upload_output]
     )
 
+    question_input.submit(
+            add_text,
+            [chatbot, question_input, role_input],
+            [chatbot]
+        ).then(
+            bot_response,
+            [chatbot, role_input],
+            [chatbot]
+        ).then(lambda: "", None, [question_input])
+
     query_button.click(
-        fn=query_document,
-        inputs=[question_input, role_input],
-        outputs=[answer_output]
-    )
+            add_text,
+            [chatbot, question_input, role_input],
+            [chatbot]
+        ).then(
+            bot_response,
+            [chatbot, role_input],
+            [chatbot]
+        ).then(lambda: "", None, [question_input])
 
 app = gr.mount_gradio_app(app, interface, path="/")
