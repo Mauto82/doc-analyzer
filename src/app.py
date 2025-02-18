@@ -18,7 +18,7 @@ rag_processor = RAGProcessor()
 
 def process_and_query(file_obj, question):
     if file_obj is None:
-        return "Please upload a PDF file"
+        return "Please upload a document file"
 
     try:
         processor = ProcessorFactory.get_processor(file_obj)
@@ -32,7 +32,7 @@ def process_and_query(file_obj, question):
 interface = gr.Interface(
     fn=process_and_query,
     inputs=[
-        gr.File(label="Upload a document", file_types=[".pdf"]),
+        gr.File(label="Upload a document", file_types=[".pdf", ".doc", ".docx"]),
         gr.Textbox(label="Ask a question about the document")
     ],
     outputs=gr.Textbox(label="Answer"),

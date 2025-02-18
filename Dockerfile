@@ -5,6 +5,8 @@ RUN apt-get update && apt-get install -y \
     poppler-utils \
     tesseract-ocr \
     libtesseract-dev \
+    antiword \
+    unrtf \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -32,5 +34,5 @@ ENV PYTHONPATH=/app/src
 
 EXPOSE 8000
 
-# Default command remains the same
+# Default command
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

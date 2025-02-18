@@ -23,5 +23,8 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ./tests:/app/tests
-    command: pytest -v
+      - .:/app
+    command: >
+      bash -c "
+        export PYTHONPATH=/app &&
+        pytest -v"

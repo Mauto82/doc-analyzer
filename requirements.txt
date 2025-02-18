@@ -8,3 +8,5 @@ python-multipart==0.0.6
 python-dotenv==1.0.0
 ollama==0.1.6
 langchain-community==0.0.10
+python-docx==0.8.11
+textract==1.6.5

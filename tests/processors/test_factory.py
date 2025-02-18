@@ -1,20 +1,39 @@
 import pytest
 from pathlib import Path
-from processors.factory import ProcessorFactory
-from processors.pdf_processor import PDFProcessor
-from unittest.mock import Mock
+from src.processors.factory import ProcessorFactory
+from src.processors.pdf_processor import PDFProcessor
+from src.processors.word_processor import WordProcessor
 
 def test_get_processor_pdf():
-    """Test factory returns PDF processor for .pdf files"""
-    mock_file = Mock()
-    mock_file.name = "test.pdf"
-    processor = ProcessorFactory.get_processor(mock_file)
+    # Test PDF processor
+    processor = ProcessorFactory.get_processor("test.pdf")
     assert isinstance(processor, PDFProcessor)
 
-def test_get_processor_unsupported():
-    """Test factory raises error for unsupported file types"""
-    mock_file = Mock()
-    mock_file.name = "test.doc"
-    with pytest.raises(ValueError) as exc_info:
-        ProcessorFactory.get_processor(mock_file)
-    assert "Please upload a PDF file" in str(exc_info.value)
+def test_get_processor_doc():
+    # Test DOC processor
+    processor = ProcessorFactory.get_processor("test.doc")
+    assert isinstance(processor, WordProcessor)
+
+def test_get_processor_docx():
+    # Test DOCX processor
+    processor = ProcessorFactory.get_processor("test.docx")
+    assert isinstance(processor, WordProcessor)
+
+def test_get_processor_invalid():
+    # Test invalid file type
+    with pytest.raises(ValueError) as excinfo:
+        ProcessorFactory.get_processor("test.txt")
+    assert "Please upload a PDF, DOC, or DOCX file" in str(excinfo.value)
+
+def test_get_processor_with_path_object():
+    # Test with Path object
+    processor = ProcessorFactory.get_processor(Path("test.pdf"))
+    assert isinstance(processor, PDFProcessor)
+
+def test_get_processor_with_file_object():
+    # Test with file-like object having name attribute
+    class MockFile:
+        name = "test.docx"
+
+    processor = ProcessorFactory.get_processor(MockFile())
+    assert isinstance(processor, WordProcessor)
