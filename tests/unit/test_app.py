@@ -39,13 +39,13 @@ def test_process_document_invalid_file():
 
 def test_query_document_empty_question():
     """Test query with empty question"""
-    result = query_document("")
+    result = query_document("", "default")
     assert result == "Please enter a question"
 
 def test_query_document_no_document():
     """Test query when no document has been processed"""
     with patch('src.app.rag_processor.query', side_effect=ValueError("Please upload a document before asking questions")):
-        result = query_document("What is this about?")
+        result = query_document("What is this about?", "default")
 
     assert result == "Please upload a document before asking questions"
 
@@ -55,6 +55,26 @@ def test_query_document_success():
     expected_answer = "This is about testing."
 
     with patch('src.app.rag_processor.query', return_value=expected_answer):
-        result = query_document(test_question)
+        result = query_document(test_question, "default")
 
     assert result == expected_answer
+
+def test_query_document_invalid_role():
+    """Test query with invalid role"""
+    test_question = "What is this about?"
+
+    with patch('src.app.rag_processor.query',
+               side_effect=ValueError("Invalid role. Must be one of: default, legal, financial, travel, technical")):
+        result = query_document(test_question, "invalid_role")
+
+    assert "Invalid role" in result
+
+def test_query_document_with_different_roles():
+    """Test query with different valid roles"""
+    test_question = "What is this about?"
+
+    for role in ["legal", "financial", "travel", "technical"]:
+        with patch('src.app.rag_processor.query', return_value=f"{role} analysis") as mock_query:
+            result = query_document(test_question, role)
+            assert result == f"{role} analysis"
+            mock_query.assert_called_once_with(test_question, role)

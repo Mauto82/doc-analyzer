@@ -20,30 +20,33 @@ The application leverages:
 
 ```
 doc-analyzer/
-├── src/                      # Source code
-│   ├── app.py               # Main FastAPI application
-│   └── processors/          # Document processors
-│       ├── base/            # Base classes
+├── src/                        # Source code
+│   ├── app.py                  # Main FastAPI application
+│   ├── config/                 # Configuration files
+│   │   ├── __init__.py
+│   │   └── prompts.py          # Role-based prompts configuration
+│   └── processors/             # Document processors
+│       ├── base/               # Base classes
 │       │   └── document_processor.py
-│       ├── factory.py       # Factory for processor creation
-│       ├── pdf_processor.py # PDF document handling
-│       ├── word_processor.py # Word document handling
-│       └── rag_processor.py # RAG implementation
-├── tests/                   # Test files
-│   ├── processors/         # Processor-specific tests
+│       ├── factory.py          # Factory for processor creation
+│       ├── pdf_processor.py    # PDF document handling
+│       ├── word_processor.py   # Word document handling
+│       └── rag_processor.py    # RAG implementation
+├── tests/                      # Test files
+│   ├── processors/             # Processor-specific tests
 │   │   ├── test_base_processor.py
 │   │   ├── test_factory.py
 │   │   └── test_word_processor.py
-│   └── unit/              # Unit tests
+│   └── unit/                   # Unit tests
 │       ├── test_app.py
 │       └── test_rag_processor.py
-├── data/                   # Data directory
-│   └── chroma/            # ChromaDB storage
-├── Dockerfile             # Container definition
-├── docker-compose.yml     # Container orchestration
-├── requirements.txt       # Production dependencies
-├── requirements-dev.txt   # Development dependencies
-└── setup.py              # Package setup
+├── data/                       # Data directory
+│   └── chroma/                 # ChromaDB storage
+├── Dockerfile                  # Container definition
+├── docker-compose.yml          # Container orchestration
+├── requirements.txt            # Production dependencies
+├── requirements-dev.txt        # Development dependencies
+└── setup.py                    # Package setup
 ```
 
 ## Requirements
@@ -98,15 +101,22 @@ docker-compose up -d
 
 ## Usage Guide
 
-1. **Upload Document**
+1. **Upload And Process Document**
    - Click upload area or drag-and-drop your document
    - Supported formats: PDF, DOC, DOCX
+   - Click Process Document button
    - Wait for processing completion
 
 2. **Ask Questions**
    - Type your question in the text input
-   - Click "Submit" or press Enter
-   - Wait for AI-generated response
+   - Select an analysis role from the dropdown:
+     - Default: General document analysis
+     - Legal: Legal implications and compliance analysis
+     - Financial: Financial implications and economic analysis
+     - Travel: Travel-related insights and recommendations
+     - Technical: Technical details and implementation analysis
+   - Click "Ask" or press Enter
+   - Receive role-specific AI-generated responses
 
 3. **Best Practices**
    - Use clear, specific questions

@@ -3,6 +3,7 @@ from langchain_community.embeddings import OllamaEmbeddings
 import ollama
 import os
 import shutil
+from src.config.prompts import ROLE_PROMPTS, BASE_PROMPT
 
 class RAGProcessor:
     def __init__(self):
@@ -18,21 +19,17 @@ class RAGProcessor:
 
     def _clean_db(self):
         """Completely clean the vector database"""
-        # Delete any existing Chroma collections
         if self.vectordb is not None:
             try:
                 collections = self.vectordb._client.list_collections()
                 for collection in collections:
                     self.vectordb._client.delete_collection(collection.name)
             except Exception:
-                pass  # If there's an error deleting collections, we'll clean the directory anyway
+                pass
             self.vectordb = None
 
-        # Remove the entire directory if it exists
         if os.path.exists(self.chroma_path):
             shutil.rmtree(self.chroma_path)
-
-        # Recreate empty directory
         os.makedirs(self.chroma_path, exist_ok=True)
 
     def process_document(self, chunks):
@@ -40,10 +37,8 @@ class RAGProcessor:
         if not chunks:
             raise ValueError("No document chunks provided")
 
-        # Always clean the database before processing new document
         self._clean_db()
 
-        # Create new vector database
         self.vectordb = Chroma.from_documents(
             documents=chunks,
             embedding=self.embeddings,
@@ -53,10 +48,25 @@ class RAGProcessor:
         if self.persist_db:
             self.vectordb.persist()
 
-    def query(self, question):
-        """Query the existing vector database"""
+    def query(self, question, role="default"):
+        """
+        Query the existing vector database with role-based context
+
+        Args:
+        question (str): The question to answer
+        role (str): The role to assume when answering. Must be one of the roles defined in ROLE_PROMPTS
+
+        Returns:
+        str: The answer from the model
+
+        Raises:
+        ValueError: If no document is loaded or if role is invalid
+        """
         if self.vectordb is None:
             raise ValueError("Please upload a document before asking questions")
+
+        if role not in ROLE_PROMPTS:
+            raise ValueError(f"Invalid role. Must be one of: {', '.join(ROLE_PROMPTS.keys())}")
 
         # Retrieve the most relevant chunks
         retriever = self.vectordb.as_retriever()
@@ -65,20 +75,17 @@ class RAGProcessor:
         # Prepare the context
         context = "\n\n".join([chunk.page_content for chunk in relevant_chunks])
 
+        # Prepare the role-specific prompt
+        prompt = BASE_PROMPT.format(
+            role_prompt=ROLE_PROMPTS[role],
+            context=context,
+            question=question
+        )
+
         # Query DeepSeek
         client = ollama.Client(
             host=f"http://{os.getenv('OLLAMA_HOST', 'localhost')}:{os.getenv('OLLAMA_PORT', '11434')}"
         )
-
-        prompt = f"""Based on the following document excerpts, answer the question.
-Use ONLY the information provided in these excerpts to formulate your answer.
-If the answer requires information from multiple sections, please specify which parts you're referencing.
-
-            Document excerpts: {context}
-
-            Question: {question}
-
-            Please provide your answer in the same language as the question, using only information from the provided excerpts:"""
 
         response = client.chat(
             model=self.model_name,

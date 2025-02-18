@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
 from src.processors.factory import ProcessorFactory
 from src.processors.rag_processor import RAGProcessor
+from src.config.prompts import ROLE_PROMPTS
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -35,13 +36,13 @@ def process_document(file_obj):
     except Exception as e:
         return f"An error occurred during document processing: {str(e)}"
 
-def query_document(question):
-    """Handle document querying"""
+def query_document(question, role):
+    """Handle document querying with role selection"""
     if not question.strip():
         return "Please enter a question"
 
     try:
-        return rag_processor.query(question)
+        return rag_processor.query(question, role)
     except ValueError as e:
         return str(e)
     except Exception as e:
@@ -61,6 +62,11 @@ with gr.Blocks(title="DocAnalyzer") as interface:
         # Query section
         with gr.Column():
             question_input = gr.Textbox(label="Ask a question about the document", lines=2)
+            role_input = gr.Dropdown(
+                choices=list(ROLE_PROMPTS.keys()),
+                value="default",
+                label="Select Analysis Role"
+            )
             query_button = gr.Button("Ask")
             answer_output = gr.Textbox(label="Answer")
 
@@ -73,7 +79,7 @@ with gr.Blocks(title="DocAnalyzer") as interface:
 
     query_button.click(
         fn=query_document,
-        inputs=[question_input],
+        inputs=[question_input, role_input],
         outputs=[answer_output]
     )
 
