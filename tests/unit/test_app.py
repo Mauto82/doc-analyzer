@@ -20,7 +20,7 @@ def mock_pdf_file():
     try:
         os.unlink(file_path)
     except FileNotFoundError:
-        pass  # Il file è già stato eliminato dal processore
+        pass
 
 @pytest.fixture
 def mock_docx_file():
@@ -29,7 +29,7 @@ def mock_docx_file():
     try:
         os.unlink(file_path)
     except FileNotFoundError:
-        pass  # Il file è già stato eliminato dal processore
+        pass
 
 @pytest.fixture
 def mock_doc_file():
@@ -38,37 +38,55 @@ def mock_doc_file():
     try:
         os.unlink(file_path)
     except FileNotFoundError:
-        pass  # Il file è già stato eliminato dal processore
+        pass
 
 def test_process_and_query_no_file():
     response = process_and_query(None, "test question")
-    assert response == "Please upload a document file"
+    assert "Please upload a document" in response
 
 def test_process_and_query_pdf(mock_pdf_file, mocker):
     # Mock the necessary components
     mocker.patch('src.processors.pdf_processor.PyMuPDFLoader.load', return_value=[])
+    mocker.patch('src.processors.rag_processor.RAGProcessor.process_document')
     mocker.patch('src.processors.rag_processor.RAGProcessor.query', return_value="Test response")
 
+    # Test document upload
     with open(mock_pdf_file, 'rb') as f:
-        response = process_and_query(f, "test question")
+        response = process_and_query(f, "")
+        assert "Document processed successfully" in response
+
+    # Test querying (senza riaprire il file)
+    response = process_and_query(None, "test question")
     assert response == "Test response"
 
 def test_process_and_query_docx(mock_docx_file, mocker):
     # Mock the necessary components
     mocker.patch('docx.Document', return_value=mocker.Mock(paragraphs=[]))
+    mocker.patch('src.processors.rag_processor.RAGProcessor.process_document')
     mocker.patch('src.processors.rag_processor.RAGProcessor.query', return_value="Test response")
 
+    # Test document upload
     with open(mock_docx_file, 'rb') as f:
-        response = process_and_query(f, "test question")
+        response = process_and_query(f, "")
+        assert "Document processed successfully" in response
+
+    # Test querying
+    response = process_and_query(None, "test question")
     assert response == "Test response"
 
 def test_process_and_query_doc(mock_doc_file, mocker):
     # Mock the necessary components
     mocker.patch('textract.process', return_value=b"Test content")
+    mocker.patch('src.processors.rag_processor.RAGProcessor.process_document')
     mocker.patch('src.processors.rag_processor.RAGProcessor.query', return_value="Test response")
 
+    # Test document upload
     with open(mock_doc_file, 'rb') as f:
-        response = process_and_query(f, "test question")
+        response = process_and_query(f, "")
+        assert "Document processed successfully" in response
+
+    # Test querying
+    response = process_and_query(None, "test question")
     assert response == "Test response"
 
 def test_process_and_query_invalid_file():

@@ -13,34 +13,34 @@ class RAGProcessor:
             model=self.model_name,
             base_url=f"http://{os.getenv('OLLAMA_HOST', 'localhost')}:{os.getenv('OLLAMA_PORT', '11434')}"
         )
-
-        # Initialize the vector database
         self.vectordb = None
 
-    def query(self, question, chunks):
+    def process_document(self, chunks):
+        """Initialize the vector database with new document chunks"""
         if not chunks:
             raise ValueError("No document chunks provided")
-        # Create or clear the vector database
-        if self.vectordb is None:
-            self.vectordb = Chroma(
-                persist_directory=self.chroma_path,
-                embedding_function=self.embeddings
-            )
 
         # Clean previous documents if not persisting
-        if not self.persist_db:
-            # Get all existing collection names
+        if not self.persist_db and self.vectordb is not None:
             collections = self.vectordb._client.list_collections()
             for collection in collections:
-                # Delete each collection
                 self.vectordb._client.delete_collection(collection.name)
+            self.vectordb = None
 
-        # Add new documents
+        # Create new vector database
         self.vectordb = Chroma.from_documents(
             documents=chunks,
             embedding=self.embeddings,
             persist_directory=self.chroma_path
         )
+
+        if self.persist_db:
+            self.vectordb.persist()
+
+    def query(self, question):
+        """Query the existing vector database"""
+        if self.vectordb is None:
+            raise ValueError("Please upload a document before asking questions")
 
         # Retrieve the most relevant chunks
         retriever = self.vectordb.as_retriever()
@@ -49,13 +49,7 @@ class RAGProcessor:
         # Prepare the context
         context = "\n\n".join([chunk.page_content for chunk in relevant_chunks])
 
-        # Log the chunks being used (for debugging)
-        print(f"Using the following chunks for context:\n{context}\n")
-
-        # Persist changes
-        self.vectordb.persist()
-
-        # Query DeepSeek with a more structured prompt
+        # Query DeepSeek
         client = ollama.Client(
             host=f"http://{os.getenv('OLLAMA_HOST', 'localhost')}:{os.getenv('OLLAMA_PORT', '11434')}"
         )
@@ -66,9 +60,9 @@ class RAGProcessor:
 
         Document excerpts: {context}
 
-        Question: {question}
+            Question: {question}
 
-        Please provide your answer in the same language as the question, using only information from the provided excerpts:"""
+            Please provide your answer in the same language as the question, using only information from the provided excerpts:"""
 
         response = client.chat(
             model=self.model_name,

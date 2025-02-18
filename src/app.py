@@ -8,9 +8,7 @@ from src.processors.rag_processor import RAGProcessor
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     yield
-    # Shutdown
 
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(
@@ -24,13 +22,20 @@ app.add_middleware(
 rag_processor = RAGProcessor()
 
 def process_and_query(file_obj, question):
-    if file_obj is None:
-        return "Please upload a document file"
+    if file_obj is None and question.strip() == "":
+        return "Please upload a document or ask a question"
 
     try:
-        processor = ProcessorFactory.get_processor(file_obj)
-        chunks = processor.process(file_obj)
-        return rag_processor.query(question, chunks)
+        if file_obj is not None:
+            processor = ProcessorFactory.get_processor(file_obj)
+            chunks = processor.process(file_obj)
+            rag_processor.process_document(chunks)
+            if not question.strip():
+                return "Document processed successfully. You can now ask questions."
+
+        if question.strip():
+            return rag_processor.query(question)
+
     except ValueError as e:
         return str(e)
     except Exception as e:
