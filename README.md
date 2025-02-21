@@ -1,6 +1,6 @@
 # Doc Analyzer
 
-A web application that analyzes PDF, DOC, and DOCX documents using DeepSeek R1 language model and RAG (Retrieval-Augmented Generation) architecture.
+A web application that analyzes PDF, DOC, and DOCX documents using large language models through Ollama and RAG (Retrieval-Augmented Generation) architecture.
 
 ## Overview
 
@@ -11,7 +11,7 @@ Doc Analyzer enables users to:
 - Process documents using state-of-the-art language models
 
 The application leverages:
-- DeepSeek R1 for text generation and embeddings
+- Ollama for text generation and embeddings
 - ChromaDB for vector storage
 - LangChain for document processing
 - FastAPI and Gradio for the web interface
@@ -52,7 +52,7 @@ doc-analyzer/
 ## Requirements
 
 - Docker and Docker Compose
-- Ollama with DeepSeek R1 1.5b (or later) model
+- Ollama with your preferred language model
 - 8GB RAM minimum
 - 20GB disk space
 - Additional system dependencies (managed by Docker):
@@ -85,7 +85,7 @@ cp .env.example .env
 OLLAMA_HOST=host.docker.internal  # Use 'localhost' for local dev
 OLLAMA_PORT=11434
 CHROMA_DB_PATH=/app/data/chroma
-DEEPSEEK_MODEL=deepseek-r1:14b
+LLM_MODEL=mistral:7b  # Use your preferred Ollama model
 CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
 PERSIST_VECTORDB=false
@@ -156,6 +156,22 @@ The application consists of several components:
 
 ## Local Development
 
+### With Docker
+```bash
+# Start with logs
+docker-compose up
+# Clean start: remove containers from old configurations
+docker-compose up --remove-orphans
+# View logs
+docker-compose logs -f
+# Rebuild after changes
+docker-compose build --no-cache
+# Rebuild without using cached images
+docker-compose build --no-cache
+# Restart services
+docker-compose restart
+```
+
 ### Without Docker
 ```bash
 python -m venv venv
@@ -165,21 +181,6 @@ pip install -r requirements-dev.txt
 mkdir -p ./data/chroma
 chmod -R 777 ./data
 uvicorn src.app:app --reload
-```
-
-### With Docker
-```bash
-# Start with logs
-docker-compose up
-
-# View logs
-docker-compose logs -f
-
-# Rebuild after changes
-docker-compose build
-
-# Restart services
-docker-compose restart
 ```
 
 ## Troubleshooting

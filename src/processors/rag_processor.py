@@ -7,7 +7,7 @@ from src.config.prompts import ROLE_PROMPTS, BASE_PROMPT
 
 class RAGProcessor:
     def __init__(self):
-        self.model_name = os.getenv('DEEPSEEK_MODEL', 'deepseek-r1:14b')
+        self.model_name = os.getenv('LLM_MODEL', 'deepseek-r1:14b')
         self.chroma_path = os.getenv('CHROMA_DB_PATH', './data/chroma')
         self.persist_db = os.getenv('PERSIST_VECTORDB', 'false').lower() == 'true'
 

@@ -16,7 +16,7 @@ def sample_chunks():
     ]
 
 def test_init(rag_processor):
-    assert rag_processor.model_name == os.getenv('DEEPSEEK_MODEL', 'deepseek-r1:14b')
+    assert rag_processor.model_name == os.getenv('LLM_MODEL', 'deepseek-r1:14b')
     assert rag_processor.chroma_path == os.getenv('CHROMA_DB_PATH', './data/chroma')
     assert rag_processor.embeddings is not None
     assert rag_processor.vectordb is None
