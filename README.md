@@ -44,6 +44,7 @@ doc-analyzer/
 │   └── chroma/                 # ChromaDB storage
 ├── Dockerfile                  # Container definition
 ├── docker-compose.yml          # Container orchestration
+├── docker-compose.test.yml     # Test container configuration
 ├── requirements.txt            # Production dependencies
 ├── requirements-dev.txt        # Development dependencies
 └── setup.py                    # Package setup
@@ -66,9 +67,9 @@ doc-analyzer/
    - Linux: `curl https://ollama.ai/install.sh | sh`
    - macOS/Windows: Download from https://ollama.ai
 
-2. Pull DeepSeek model:
+2. Pull the language model (deepseek-r1:14b is the default, but you can use any Ollama model by updating the .env file):
 ```bash
-ollama pull deepseek-r1:1.5b
+ollama pull deepseek-r1:14b  # or your preferred model
 ```
 
 ## Quick Start with Docker
@@ -91,13 +92,45 @@ CHUNK_OVERLAP=200
 PERSIST_VECTORDB=false
 ```
 
-3. Start application:
+3. Running the application:
 ```bash
-docker-compose build
-docker-compose up -d
+# Start the web application
+docker compose up -d
+
+# Access the web interface at http://localhost:8000
 ```
 
-4. Access: http://localhost:8000
+4. Running tests:
+```bash
+# Run the test suite
+docker compose -f docker-compose.test.yml up --abort-on-container-exit
+```
+
+5. Other Docker commands:
+```bash
+# Clean start: remove containers from old configurations
+docker-compose up --remove-orphans
+
+# View logs
+docker-compose logs -f
+
+# Rebuild without using cached images
+docker-compose build --no-cache
+
+# Restart services
+docker-compose restart
+```
+
+### Deployment Without Docker
+```bash
+python -m venv venv
+source venv/bin/activate  # or .\venv\Scripts\activate on Windows
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+mkdir -p ./data/chroma
+chmod -R 777 ./data
+uvicorn src.app:app --reload
+```
 
 ## Usage Guide
 
@@ -153,35 +186,6 @@ The application consists of several components:
 - Stores document embeddings
 - Enables semantic search
 - Maintains document-query relevance
-
-## Local Development
-
-### With Docker
-```bash
-# Start with logs
-docker-compose up
-# Clean start: remove containers from old configurations
-docker-compose up --remove-orphans
-# View logs
-docker-compose logs -f
-# Rebuild after changes
-docker-compose build --no-cache
-# Rebuild without using cached images
-docker-compose build --no-cache
-# Restart services
-docker-compose restart
-```
-
-### Without Docker
-```bash
-python -m venv venv
-source venv/bin/activate  # or .\venv\Scripts\activate on Windows
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-mkdir -p ./data/chroma
-chmod -R 777 ./data
-uvicorn src.app:app --reload
-```
 
 ## Troubleshooting
 
