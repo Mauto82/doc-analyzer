@@ -35,12 +35,12 @@ processed_files = []
 
 def add_file_to_context(file_obj):
     """
-    Process a single file and add it to the existing context
+Process a single file and add it to the existing context
     """
     global processed_files
 
     if file_obj is None:
-        return "Please select a file to upload", None
+        return [["No files in context"]], None
 
     try:
         # Get file name for tracking
@@ -56,16 +56,17 @@ def add_file_to_context(file_obj):
         # Add to tracked files
         processed_files.append(file_name)
 
-        # Return status with current context
-        return f"Added: {file_name} to context\nCurrent context: {', '.join(processed_files)}", None
+        # Return status with current context as a table data
+        files_table = [[file] for file in processed_files]
+        return files_table, None
     except ValueError as e:
-        return f"Error: {str(e)}", None
+        return [[f"Error: {str(e)}"]], None
     except Exception as e:
-        return f"An error occurred while processing: {str(e)}", None
+        return [[f"An error occurred while processing: {str(e)}"]], None
 
 def clear_context():
     """
-    Clear all files from context and reset the vector database
+Clear all files from context and reset the vector database
     """
     global processed_files
 
@@ -75,11 +76,11 @@ def clear_context():
     # Clear the vector database
     rag_processor._clean_db()
 
-    return "Context cleared. All documents have been removed."
+    return [["Context cleared. All documents have been removed."]]
 
 def query_document(question, role):
     """
-    Handle document querying with role selection
+Handle document querying with role selection
     """
     if not question.strip():
         return "Please enter a question"
@@ -129,11 +130,14 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
             # Add to context button
             add_to_context_button = gr.Button("Add to Context", variant="primary")
 
-            # Status display
-            context_status = gr.Textbox(
-                label="Context Status",
-                value="No documents in context",
-                lines=4
+            # Status display with table component
+            context_status = gr.Dataframe(
+                headers=["Files in Context"],
+                datatype=["str"],
+                row_count=5,
+                col_count=(1, "fixed"),
+                value=[["No documents in context"]],
+                height=200
             )
 
             # Clear context button
@@ -153,7 +157,7 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
         history[-1] = (user_message, bot_message)
         return history
 
-    # Document handling events - modificato per resettare il file_input
+    # Document handling events
     add_to_context_button.click(
         fn=add_file_to_context,
         inputs=[file_input],
