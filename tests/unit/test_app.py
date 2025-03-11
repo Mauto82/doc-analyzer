@@ -1,80 +1,238 @@
-import pytest
-from unittest.mock import Mock, patch
-from src.app import process_document, query_document
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import gradio as gr
+import os
+import tempfile
+import shutil
 from src.processors.factory import ProcessorFactory
-from langchain.schema import Document
+from src.processors.rag_processor import RAGProcessor
+from src.config.prompts import ROLE_PROMPTS
 
-def test_process_document_with_no_file():
-    """Test process_document when no file is provided"""
-    result = process_document(None)
-    assert result == "Please upload a document"
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Create temporary directory for uploads
+    os.makedirs("./temp_uploads", exist_ok=True)
+    yield
+    # Clean up on shutdown
+    if os.path.exists("./temp_uploads"):
+        shutil.rmtree("./temp_uploads")
 
-def test_process_document_success():
-    """Test successful document processing"""
-    # Mock file object and processor
-    mock_file = Mock()
-    mock_processor = Mock()
-    mock_processor.process.return_value = [
-        Document(page_content="chunk1", metadata={}),
-        Document(page_content="chunk2", metadata={})
-    ]
+app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    # Mock both the factory and RAGProcessor
-    with patch.object(ProcessorFactory, 'get_processor', return_value=mock_processor), \
-         patch('src.app.rag_processor.process_document') as mock_rag:
-        result = process_document(mock_file)
+rag_processor = RAGProcessor()
 
-    assert result == "Document processed successfully. You can now ask questions."
-    mock_processor.process.assert_called_once_with(mock_file)
-    mock_rag.assert_called_once()
+# Global storage for uploaded files
+UPLOAD_DIR = "./temp_uploads"
+uploaded_files = []
 
-def test_process_document_invalid_file():
-    """Test processing with invalid file type"""
-    mock_file = Mock()
+def add_file(file_obj):
+    """Add a file to the list of uploaded files"""
+    global uploaded_files
 
-    with patch.object(ProcessorFactory, 'get_processor', side_effect=ValueError("Invalid file type")):
-        result = process_document(mock_file)
+    if file_obj is None:
+        return "No file selected"
 
-    assert result == "Invalid file type"
+    # Save file to temp directory
+    file_name = os.path.basename(file_obj.name)
+    target_path = os.path.join(UPLOAD_DIR, file_name)
 
-def test_query_document_empty_question():
-    """Test query with empty question"""
-    result = query_document("", "default")
-    assert result == "Please enter a question"
+    # Copy the file
+    shutil.copy(file_obj.name, target_path)
 
-def test_query_document_no_document():
-    """Test query when no document has been processed"""
-    with patch('src.app.rag_processor.query', side_effect=ValueError("Please upload a document before asking questions")):
-        result = query_document("What is this about?", "default")
+    # Add to list of uploaded files
+    uploaded_files.append(target_path)
 
-    assert result == "Please upload a document before asking questions"
+    # Return status with all current files
+    file_list = [os.path.basename(f) for f in uploaded_files]
+    return f"File {file_name} added. Current files: {', '.join(file_list)}"
 
-def test_query_document_success():
-    """Test successful document query"""
-    test_question = "What is this about?"
-    expected_answer = "This is about testing."
+def process_all_documents(clean_db=True):
+    """Process all uploaded documents"""
+    global uploaded_files
 
-    with patch('src.app.rag_processor.query', return_value=expected_answer):
-        result = query_document(test_question, "default")
+    if not uploaded_files:
+        return "No documents to process. Please upload files first."
 
-    assert result == expected_answer
+    try:
+        all_chunks = []
+        processed_files = []
+        failed_files = []
 
-def test_query_document_invalid_role():
-    """Test query with invalid role"""
-    test_question = "What is this about?"
+        for file_path in uploaded_files:
+            try:
+                processor = ProcessorFactory.get_processor(file_path)
+                chunks = processor.process(file_path)
+                all_chunks.extend(chunks)
+                processed_files.append(os.path.basename(file_path))
+            except Exception as e:
+                failed_files.append((os.path.basename(file_path), str(e)))
 
-    with patch('src.app.rag_processor.query',
-               side_effect=ValueError("Invalid role. Must be one of: default, legal, financial, travel, technical")):
-        result = query_document(test_question, "invalid_role")
+        if not all_chunks:
+            if failed_files:
+                return f"Failed to process files: {', '.join(f[0] for f in failed_files)}"
+            return "No content was extracted from the uploaded documents"
 
-    assert "Invalid role" in result
+        # Process chunks
+        if clean_db:
+            rag_processor.process_document(all_chunks)
+        else:
+            rag_processor.add_document(all_chunks)
 
-def test_query_document_with_different_roles():
-    """Test query with different valid roles"""
-    test_question = "What is this about?"
+        success_msg = f"Successfully processed {len(processed_files)} document(s)"
+        if failed_files:
+            return f"{success_msg}. Failed to process: {', '.join(f[0] for f in failed_files)}"
+        return f"{success_msg}. You can now ask questions."
+    except Exception as e:
+        return f"Error processing documents: {str(e)}"
 
-    for role in ["legal", "financial", "travel", "technical"]:
-        with patch('src.app.rag_processor.query', return_value=f"{role} analysis") as mock_query:
-            result = query_document(test_question, role)
-            assert result == f"{role} analysis"
-            mock_query.assert_called_once_with(test_question, role)
+def clear_uploads():
+    """Clear the list of uploaded files"""
+    global uploaded_files
+    uploaded_files = []
+
+    # Clean the upload directory
+    for file in os.listdir(UPLOAD_DIR):
+        os.remove(os.path.join(UPLOAD_DIR, file))
+
+    return "All uploaded files have been cleared."
+
+def clear_knowledge_base():
+    """Clear the knowledge base"""
+    rag_processor._clean_db()
+    return "Knowledge base has been cleared."
+
+def query_document(question, role):
+    """Handle document querying with role selection"""
+    if not question.strip():
+        return "Please enter a question"
+
+    try:
+        return rag_processor.query(question, role)
+    except ValueError as e:
+        return str(e)
+    except Exception as e:
+        return f"An error occurred during querying: {str(e)}"
+
+# Create Gradio interface
+with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
+    gr.Markdown("# DocAnalyzer\nAnalyze documents with Large Language Models")
+
+    with gr.Row():
+        # Left column - Chat section
+        with gr.Column(scale=2):
+            chatbot = gr.Chatbot(height=400)
+            with gr.Row():
+                with gr.Column(scale=3):
+                    question_input = gr.Textbox(
+                        show_label=False,
+                        placeholder="Ask a question about the document...",
+                        container=False
+                    )
+                with gr.Column(scale=2):
+                    role_input = gr.Dropdown(
+                        choices=list(ROLE_PROMPTS.keys()),
+                        value="default",
+                        label="Analysis Role"
+                    )
+            query_button = gr.Button("Send")
+
+        # Right column - Document upload section
+        with gr.Column(scale=1):
+            # Document upload - single file at a time
+            file_input = gr.File(
+                label="Select Document",
+                file_types=[".pdf", ".doc", ".docx"],
+                file_count="single"
+            )
+            add_file_button = gr.Button("Add Document to List")
+
+            # Status display
+            status_output = gr.Textbox(label="Status", value="No files uploaded")
+
+            # Processing controls
+            gr.Markdown("### Process Documents")
+            with gr.Row():
+                process_button = gr.Button("Process All (Replace KB)", variant="primary")
+                add_to_kb_button = gr.Button("Add All to Knowledge Base")
+
+            # Clean up controls
+            gr.Markdown("### Clean Up")
+            with gr.Row():
+                clear_uploads_button = gr.Button("Clear File List")
+                clear_kb_button = gr.Button("Clear Knowledge Base")
+
+    def add_text(history, text, role):
+        if not text:
+            return history
+        history = history + [(text, None)]
+        return history
+
+    def bot_response(history, role):
+        if not history:
+            return history
+        user_message = history[-1][0]
+        bot_message = query_document(user_message, role)
+        history[-1] = (user_message, bot_message)
+        return history
+
+    # Document handling events
+    add_file_button.click(
+        fn=add_file,
+        inputs=[file_input],
+        outputs=[status_output]
+    )
+
+    process_button.click(
+        fn=lambda: process_all_documents(clean_db=True),
+        inputs=[],
+        outputs=[status_output]
+    )
+
+    add_to_kb_button.click(
+        fn=lambda: process_all_documents(clean_db=False),
+        inputs=[],
+        outputs=[status_output]
+    )
+
+    clear_uploads_button.click(
+        fn=clear_uploads,
+        inputs=[],
+        outputs=[status_output]
+    )
+
+    clear_kb_button.click(
+        fn=clear_knowledge_base,
+        inputs=[],
+        outputs=[status_output]
+    )
+
+    # Chat events
+    question_input.submit(
+            add_text,
+            [chatbot, question_input, role_input],
+            [chatbot]
+        ).then(
+            bot_response,
+            [chatbot, role_input],
+            [chatbot]
+        ).then(lambda: "", None, [question_input])
+
+    query_button.click(
+            add_text,
+            [chatbot, question_input, role_input],
+            [chatbot]
+        ).then(
+            bot_response,
+            [chatbot, role_input],
+            [chatbot]
+        ).then(lambda: "", None, [question_input])
+
+app = gr.mount_gradio_app(app, interface, path="/")
