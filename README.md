@@ -6,6 +6,7 @@ A web application that analyzes PDF, DOC, and DOCX documents using large languag
 
 Doc Analyzer enables users to:
 - Upload PDF, DOC, and DOCX documents
+- Add multiple documents to the context
 - Ask questions about document content
 - Receive AI-generated responses based on document content
 - Process documents using state-of-the-art language models
@@ -86,7 +87,7 @@ cp .env.example .env
 OLLAMA_HOST=host.docker.internal  # Use 'localhost' for local dev
 OLLAMA_PORT=11434
 CHROMA_DB_PATH=/app/data/chroma
-LLM_MODEL=mistral:7b  # Use your preferred Ollama model
+LLM_MODEL=deepseek-r1:14b  # Use your preferred Ollama model
 CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
 PERSIST_VECTORDB=false
@@ -134,13 +135,22 @@ uvicorn src.app:app --reload
 
 ## Usage Guide
 
-1. **Upload And Process Document**
+1. **Upload And Process Documents**
    - Click upload area or drag-and-drop your document
    - Supported formats: PDF, DOC, DOCX
-   - Click Process Document button
-   - Wait for processing completion
+   - Click "Add to Context" button to add the document to the current context
+   - You can add multiple documents to the context one by one
+   - Each document added will be shown in the Context Status area
+   - The documents are processed automatically when added
 
-2. **Ask Questions**
+2. **Managing Document Context**
+   - All uploaded documents are accumulated in the context
+   - Each document's content is indexed and made available for querying
+   - You can view the current context in the "Context Status" area
+   - To remove all documents, click the "Clear Context" button
+   - Clearing the context resets the vector database completely
+
+3. **Ask Questions**
    - Type your question in the text input
    - Select an analysis role from the dropdown:
      - Default: General document analysis
@@ -148,14 +158,22 @@ uvicorn src.app:app --reload
      - Financial: Financial implications and economic analysis
      - Travel: Travel-related insights and recommendations
      - Technical: Technical details and implementation analysis
-   - Click "Ask" or press Enter
-   - Receive role-specific AI-generated responses
+   - Click "Send" or press Enter
+   - Receive role-specific AI-generated responses based on all documents in context
 
-3. **Best Practices**
+4. **Multi-Document Analysis**
+   - The system automatically retrieves information from all added documents
+   - You can ask questions that require information from multiple documents
+   - The AI will combine relevant information from different documents to provide comprehensive answers
+   - The more specific your question, the more targeted the response will be
+
+5. **Best Practices**
+   - Add related documents to the context for comprehensive analysis
    - Use clear, specific questions
    - Ask one question at a time
-   - For complex documents, start with general questions
-   - Wait for each response before asking next question
+   - For complex multi-document scenarios, start with general questions
+   - Wait for each response before asking the next question
+   - If you're starting a new topic, consider clearing the context first
 
 ## Architecture
 
@@ -183,8 +201,8 @@ The application consists of several components:
 - Generates responses using DeepSeek
 
 ### Vector Store (ChromaDB)
-- Stores document embeddings
-- Enables semantic search
+- Stores document embeddings from multiple documents
+- Enables semantic search across all documents
 - Maintains document-query relevance
 
 ## Troubleshooting
@@ -216,6 +234,7 @@ chunk_overlap=100
 - DOC files: File must be readable by antiword
 - DOCX files: File must be a valid Office Open XML format
 - If text extraction fails, try converting the document to PDF
+- If adding a document doesn't update the context, try clearing the context and adding it again
 
 ## Contributing
 
