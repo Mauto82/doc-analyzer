@@ -1,3 +1,4 @@
+import pytest
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +9,11 @@ import shutil
 from src.processors.factory import ProcessorFactory
 from src.processors.rag_processor import RAGProcessor
 from src.config.prompts import ROLE_PROMPTS
+
+# Set necessary environment variables for testing
+os.environ['LLM_MODEL'] = 'test-model'
+os.environ['OLLAMA_HOST'] = 'localhost'
+os.environ['OLLAMA_PORT'] = '11434'
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -109,13 +115,13 @@ def clear_knowledge_base():
     rag_processor._clean_db()
     return "Knowledge base has been cleared."
 
-def query_document(question, role):
-    """Handle document querying with role selection"""
+def query_document(question, role, model=None):
+    """Handle document querying with role selection and optional model selection"""
     if not question.strip():
         return "Please enter a question"
 
     try:
-        return rag_processor.query(question, role)
+        return rag_processor.query(question, role, model)
     except ValueError as e:
         return str(e)
     except Exception as e:
@@ -141,6 +147,11 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
                         choices=list(ROLE_PROMPTS.keys()),
                         value="default",
                         label="Analysis Role"
+                    )
+                    model_input = gr.Dropdown(
+                        choices=[rag_processor.model_name],
+                        value=rag_processor.model_name,
+                        label="LLM Model"
                     )
             query_button = gr.Button("Send")
 
@@ -175,11 +186,11 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
         history = history + [(text, None)]
         return history
 
-    def bot_response(history, role):
+    def bot_response(history, role, model):
         if not history:
             return history
         user_message = history[-1][0]
-        bot_message = query_document(user_message, role)
+        bot_message = query_document(user_message, role, model)
         history[-1] = (user_message, bot_message)
         return history
 
@@ -221,7 +232,7 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
             [chatbot]
         ).then(
             bot_response,
-            [chatbot, role_input],
+            [chatbot, role_input, model_input],
             [chatbot]
         ).then(lambda: "", None, [question_input])
 
@@ -231,7 +242,7 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
             [chatbot]
         ).then(
             bot_response,
-            [chatbot, role_input],
+            [chatbot, role_input, model_input],
             [chatbot]
         ).then(lambda: "", None, [question_input])
 

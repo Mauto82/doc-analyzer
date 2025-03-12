@@ -5,9 +5,10 @@ import os
 
 @pytest.fixture
 def rag_processor(monkeypatch):
-    # Ensure we don't try to connect to Ollama during tests
+    # Set required environment variables for tests
     monkeypatch.setenv('OLLAMA_HOST', 'localhost')
     monkeypatch.setenv('OLLAMA_PORT', '11434')
+    monkeypatch.setenv('LLM_MODEL', 'test-model')  # Explicitly set model for tests
     return RAGProcessor()
 
 @pytest.fixture
@@ -26,9 +27,27 @@ def more_chunks():
     ]
 
 def test_init(rag_processor):
-    assert rag_processor.model_name == os.getenv('LLM_MODEL', 'deepseek-r1:14b')
+    assert rag_processor.model_name == 'test-model'  # Should match our test environment value
     assert rag_processor.chroma_path == os.getenv('CHROMA_DB_PATH', './data/chroma')
     assert rag_processor.embeddings is not None
+
+def test_missing_model_env():
+    # Test that RAGProcessor raises an error when LLM_MODEL is not set
+    with pytest.raises(ValueError) as excinfo:
+        # Temporarily clear LLM_MODEL from environment
+        if 'LLM_MODEL' in os.environ:
+            old_model = os.environ['LLM_MODEL']
+            del os.environ['LLM_MODEL']
+            try:
+                RAGProcessor()
+            finally:
+                # Restore environment
+                os.environ['LLM_MODEL'] = old_model
+        else:
+            # If LLM_MODEL wasn't in environment to begin with
+            RAGProcessor()
+
+    assert "LLM_MODEL environment variable is not set" in str(excinfo.value)
 
 def test_process_document_no_chunks(rag_processor):
     with pytest.raises(ValueError) as excinfo:
@@ -41,13 +60,13 @@ def test_add_document_no_chunks(rag_processor):
     assert "No document chunks provided" in str(excinfo.value)
 
 def test_query_without_document(rag_processor, mocker):
-    # Mock _ensure_db per evitare connessioni reali
+    # Mock _ensure_db to prevent real connections
     mocker.patch.object(rag_processor, '_ensure_db')
 
-    # Imposta vectordb a None per simulare nessun documento caricato
+    # Set vectordb to None to simulate no document loaded
     rag_processor.vectordb = None
 
-    # Mock embeddings per evitare chiamate reali a Ollama
+    # Mock embeddings to avoid real calls to Ollama
     mocker.patch.object(rag_processor, 'embeddings')
 
     with pytest.raises(ValueError) as excinfo:
@@ -78,12 +97,26 @@ def test_process_and_query(rag_processor, sample_chunks, mocker):
         'message': {'content': 'Test response'}
     }
 
-    # Test query
+    # Test query with default model
     response = rag_processor.query("test question")
     assert response == "Test response"
-
     # Verify the retriever was used
     mock_retriever.get_relevant_documents.assert_called_once_with("test question")
+    # Verify the default model was used
+    mock_client_instance.chat.assert_called_with(
+        model='test-model',
+        messages=[{'role': 'user', 'content': mocker.ANY}]
+    )
+    mock_client_instance.chat.reset_mock()
+
+    # Test query with specified model
+    response = rag_processor.query("test question", model="another-model")
+    assert response == "Test response"
+    # Verify the specified model was used
+    mock_client_instance.chat.assert_called_with(
+        model='another-model',
+        messages=[{'role': 'user', 'content': mocker.ANY}]
+    )
 
 def test_add_document(rag_processor, sample_chunks, more_chunks, mocker):
     # Mock embeddings
@@ -129,13 +162,12 @@ def test_process_document_with_clean_flag(rag_processor, sample_chunks, mocker):
     rag_processor._clean_db.assert_not_called()
     mock_chroma.add_documents.assert_called_once()
 
-def test_persistence(sample_chunks, mocker):
-    # Set PERSIST_VECTORDB to true BEFORE creating RAGProcessor
-    mocker.patch.dict(os.environ, {
-        'PERSIST_VECTORDB': 'true',
-        'OLLAMA_HOST': 'localhost',
-        'OLLAMA_PORT': '11434'
-    })
+def test_persistence(monkeypatch, sample_chunks, mocker):
+    # Set environment variables BEFORE creating RAGProcessor
+    monkeypatch.setenv('PERSIST_VECTORDB', 'true')
+    monkeypatch.setenv('OLLAMA_HOST', 'localhost')
+    monkeypatch.setenv('OLLAMA_PORT', '11434')
+    monkeypatch.setenv('LLM_MODEL', 'test-model')
 
     # Create mocked RAGProcessor
     rag_processor = RAGProcessor()
@@ -163,3 +195,26 @@ def test_persistence(sample_chunks, mocker):
 
     # Verify persist was called again
     mock_chroma.persist.assert_called_once()
+
+def test_get_available_models(rag_processor, mocker):
+    # Mock ollama client
+    mock_ollama_client = mocker.patch('ollama.Client')
+    mock_client_instance = mocker.MagicMock()
+    mock_ollama_client.return_value = mock_client_instance
+
+    # Set up the mock response for list()
+    mock_client_instance.list.return_value = {
+        'models': [
+            {'name': 'model1'},
+            {'name': 'model2'},
+            {'name': 'test-model'}
+        ]
+    }
+
+    models = rag_processor.get_available_models()
+    assert models == ['model1', 'model2', 'test-model']
+
+    # Test error handling
+    mock_client_instance.list.side_effect = Exception("Connection failed")
+    models = rag_processor.get_available_models()
+    assert models == ['test-model']

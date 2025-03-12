@@ -7,7 +7,11 @@ from src.config.prompts import ROLE_PROMPTS, BASE_PROMPT
 
 class RAGProcessor:
     def __init__(self):
-        self.model_name = os.getenv('LLM_MODEL', 'deepseek-r1:14b')
+        # Check if LLM_MODEL is set
+        self.model_name = os.getenv('LLM_MODEL')
+        if not self.model_name:
+            raise ValueError("LLM_MODEL environment variable is not set. Configure this in your .env file")
+
         self.chroma_path = os.getenv('CHROMA_DB_PATH', './data/chroma')
         self.persist_db = os.getenv('PERSIST_VECTORDB', 'false').lower() == 'true'
 
@@ -68,11 +72,12 @@ class RAGProcessor:
         self._ensure_db()
 
     def process_document(self, chunks, clean_db=True):
-        """Initialize the vector database with new document chunks
+        """
+        Initialize the vector database with new document chunks
 
-Args:
-chunks: Document chunks to add to the database
-clean_db: If True, clean the database before adding new chunks
+        Args:
+        chunks: Document chunks to add to the database
+        clean_db: If True, clean the database before adding new chunks
         """
         if not chunks:
             raise ValueError("No document chunks provided")
@@ -84,10 +89,11 @@ clean_db: If True, clean the database before adding new chunks
             self.add_document(chunks)
 
     def add_document(self, chunks):
-        """Add document chunks to the existing vector database
+        """
+        Add document chunks to the existing vector database
 
-Args:
-chunks: Document chunks to add to the database
+        Args:
+        chunks: Document chunks to add to the database
         """
         if not chunks:
             raise ValueError("No document chunks provided")
@@ -102,19 +108,20 @@ chunks: Document chunks to add to the database
 
         return ids
 
-    def query(self, question, role="default"):
+    def query(self, question, role="default", model=None):
         """
-Query the existing vector database with role-based context
+        Query the existing vector database with role-based context
 
-Args:
-question (str): The question to answer
-role (str): The role to assume when answering. Must be one of the roles defined in ROLE_PROMPTS
+        Args:
+        question (str): The question to answer
+        role (str): The role to assume when answering. Must be one of the roles defined in ROLE_PROMPTS
+        model (str, optional): The model to use for the query. Defaults to the model specified in LLM_MODEL
 
-Returns:
-str: The answer from the model
+        Returns:
+        str: The answer from the model
 
-Raises:
-ValueError: If no document is loaded or if role is invalid
+        Raises:
+        ValueError: If no document is loaded or if role is invalid
         """
         self._ensure_db()
 
@@ -123,6 +130,9 @@ ValueError: If no document is loaded or if role is invalid
 
         if role not in ROLE_PROMPTS:
             raise ValueError(f"Invalid role. Must be one of: {', '.join(ROLE_PROMPTS.keys())}")
+
+        # Use specified model or fall back to default
+        query_model = model if model else self.model_name
 
         # Retrieve the most relevant chunks
         retriever = self.vectordb.as_retriever()
@@ -141,13 +151,13 @@ ValueError: If no document is loaded or if role is invalid
             question=question
         )
 
-        # Query DeepSeek
+        # Query LLM
         client = ollama.Client(
             host=f"http://{os.getenv('OLLAMA_HOST', 'localhost')}:{os.getenv('OLLAMA_PORT', '11434')}"
         )
 
         response = client.chat(
-            model=self.model_name,
+            model=query_model,
             messages=[{
                 "role": "user",
                 "content": prompt
@@ -155,3 +165,20 @@ ValueError: If no document is loaded or if role is invalid
         )
 
         return response['message']['content']
+
+    def get_available_models(self):
+        """
+        Get a list of available models from Ollama
+
+        Returns:
+        list: List of available model names
+        """
+        try:
+            client = ollama.Client(
+                host=f"http://{os.getenv('OLLAMA_HOST', 'localhost')}:{os.getenv('OLLAMA_PORT', '11434')}"
+            )
+            models = client.list()
+            return [model['name'] for model in models['models']]
+        except Exception:
+            # Return just the current model if we can't get the list
+            return [self.model_name] if self.model_name else []
