@@ -123,7 +123,7 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
             # Single file upload
             file_input = gr.File(
                 label="Select Document",
-                file_types=[".pdf", ".doc", ".docx"],
+                file_types=[".pdf", ".doc", ".docx", ".txt"],  # Aggiunto .txt
                 file_count="single"
             )
 

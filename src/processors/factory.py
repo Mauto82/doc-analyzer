@@ -1,8 +1,10 @@
+# Modifiche a src/processors/factory.py
 from typing import Union
 from pathlib import Path
 from .base.document_processor import DocumentProcessor
 from .pdf_processor import PDFProcessor
 from .word_processor import WordProcessor
+from .text_processor import TextProcessor
 
 class ProcessorFactory:
     """Factory class for creating document processors"""
@@ -33,5 +35,7 @@ class ProcessorFactory:
             return PDFProcessor()
         elif extension in ['.doc', '.docx']:
             return WordProcessor()
+        elif extension == '.txt':
+            return TextProcessor()
 
-        raise ValueError("Please upload a PDF, DOC, or DOCX file")
+        raise ValueError("Please upload a PDF, DOC, DOCX, or TXT file")
