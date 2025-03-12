@@ -1,11 +1,14 @@
 # Doc Analyzer
 
-A web application that analyzes PDF, DOC, and DOCX documents using large language models through Ollama and RAG (Retrieval-Augmented Generation) architecture.
+A web application that analyzes PDF, DOC, DOCX, TXT, RTF, code files, and more using large language models through Ollama and RAG (Retrieval-Augmented Generation) architecture.
 
 ## Overview
 
 Doc Analyzer enables users to:
-- Upload PDF, DOC, and DOCX documents
+- Upload various document types (PDF, DOC, DOCX, TXT, RTF)
+- Analyze code files (Python, JavaScript, Java, and many others)
+- Process Markdown (.md) and YAML (.yaml/.yml) files
+- Analyze Dockerfiles (renamed with an extension like .txt)
 - Add multiple documents to the context
 - Ask questions about document content
 - Receive AI-generated responses based on document content
@@ -32,12 +35,16 @@ doc-analyzer/
 │       ├── factory.py          # Factory for processor creation
 │       ├── pdf_processor.py    # PDF document handling
 │       ├── word_processor.py   # Word document handling
+│       ├── text_processor.py   # Text file handling
+│       ├── rtf_processor.py    # RTF document handling
+│       ├── code_processor.py   # Code file handling
 │       └── rag_processor.py    # RAG implementation
 ├── tests/                      # Test files
 │   ├── processors/             # Processor-specific tests
 │   │   ├── test_base_processor.py
 │   │   ├── test_factory.py
 │   │   └── test_word_processor.py
+│   │   └── test_text_processor.py
 │   └── unit/                   # Unit tests
 │       ├── test_app.py
 │       └── test_rag_processor.py
@@ -60,7 +67,7 @@ doc-analyzer/
 - Additional system dependencies (managed by Docker):
   - poppler-utils (for PDF processing)
   - tesseract-ocr and libtesseract-dev (for text extraction)
-  - antiword and unrtf (for DOC/DOCX processing)
+  - antiword and unrtf (for DOC/DOCX/RTF processing)
 
 ### Installing Ollama
 
@@ -107,37 +114,44 @@ docker compose up -d
 docker compose -f docker-compose.test.yml up --abort-on-container-exit
 ```
 
-5. Other Docker commands:
-```bash
-# Clean start: remove containers from old configurations
-docker-compose up --remove-orphans
+## Supported File Types
 
-# View logs
-docker-compose logs -f
+Doc Analyzer supports a wide range of file formats:
 
-# Rebuild without using cached images
-docker-compose build --no-cache
+### Document Files
+- PDF (`.pdf`)
+- Microsoft Word (`.doc`, `.docx`)
+- Rich Text Format (`.rtf`)
+- Plain Text (`.txt`)
+- Markdown (`.md`)
 
-# Restart services
-docker-compose restart
-```
+### Configuration Files
+- YAML (`.yaml`, `.yml`)
 
-### Deployment Without Docker
-```bash
-python -m venv venv
-source venv/bin/activate  # or .\venv\Scripts\activate on Windows
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-mkdir -p ./data/chroma
-chmod -R 777 ./data
-uvicorn src.app:app --reload
-```
+### Code Files
+- Python (`.py`)
+- JavaScript (`.js`)
+- TypeScript (`.ts`)
+- Java (`.java`)
+- C/C++ (`.c`, `.cpp`, `.h`, `.hpp`)
+- C# (`.cs`)
+- PHP (`.php`)
+- Go (`.go`)
+- Ruby (`.rb`)
+- Rust (`.rs`)
+- HTML (`.html`)
+- CSS (`.css`)
+- Many others...
+
+### Special Files
+- **Dockerfiles**: Due to Gradio UI limitations, Dockerfiles (which have no extension) must be renamed with an extension (e.g., `Dockerfile.txt`) before uploading. The system will automatically detect Dockerfile content based on common instructions.
 
 ## Usage Guide
 
 1. **Upload And Process Documents**
    - Click upload area or drag-and-drop your document
-   - Supported formats: PDF, DOC, DOCX
+   - Supported formats include PDF, DOC, DOCX, TXT, RTF, code files, and more
+   - For Dockerfiles, rename the file with an extension (e.g., Dockerfile.txt) before uploading
    - Click "Add to Context" button to add the document to the current context
    - You can add multiple documents to the context one by one
    - Each document added will be shown in the Context Status area
@@ -167,13 +181,21 @@ uvicorn src.app:app --reload
    - The AI will combine relevant information from different documents to provide comprehensive answers
    - The more specific your question, the more targeted the response will be
 
-5. **Best Practices**
-   - Add related documents to the context for comprehensive analysis
-   - Use clear, specific questions
-   - Ask one question at a time
-   - For complex multi-document scenarios, start with general questions
-   - Wait for each response before asking the next question
-   - If you're starting a new topic, consider clearing the context first
+5. **Code File Analysis**
+   - Code files are processed with language-specific understanding
+   - Ask technical questions about code structure, patterns, or implementation
+   - The system includes language information in metadata to provide context-aware responses
+
+## Best Practices
+
+- Add related documents to the context for comprehensive analysis
+- Use clear, specific questions
+- Ask one question at a time
+- For complex multi-document scenarios, start with general questions
+- Wait for each response before asking the next question
+- If you're starting a new topic, consider clearing the context first
+- When uploading Dockerfiles, rename them with a `.txt` extension
+- For code files with uncommon extensions, consider renaming to a common extension
 
 ## Architecture
 
@@ -188,11 +210,17 @@ The application consists of several components:
 - PDF Processor:
   - Extracts text from PDF documents using PyMuPDF
   - Splits content into manageable chunks
-  - Uses LangChain for document handling
 - Word Processor:
   - Processes DOC files using antiword
   - Handles DOCX files using python-docx
-  - Extracts text content for analysis
+- Text Processor:
+  - Processes plain text files
+- RTF Processor:
+  - Processes Rich Text Format files using textract
+- Code Processor:
+  - Handles various programming languages and code files
+  - Provides language-specific metadata
+  - Identifies Dockerfiles based on content patterns
 
 ### RAG Processor
 - Creates embeddings using DeepSeek
@@ -207,6 +235,11 @@ The application consists of several components:
 
 ## Troubleshooting
 
+### Dockerfiles Not Being Recognized
+- Rename your Dockerfile to include an extension (e.g., Dockerfile.txt)
+- Ensure the Dockerfile contains standard Docker instructions
+- The system requires at least 2 common Dockerfile instructions to automatically detect it
+
 ### Database Issues
 If you get "readonly database" error in local development:
 ```bash
@@ -220,20 +253,12 @@ rm -rf ./data/chroma/*
 3. Check `.env` configuration matches your setup
 4. For Docker Desktop users, ensure `host.docker.internal` is used
 
-### Memory Issues
-- Docker Desktop: Increase memory limit (Preferences → Resources → Memory)
-- Recommended minimum: 8GB
-- If needed, reduce chunk size in `pdf_processor.py`:
-```python
-chunk_size=500  # Decrease if experiencing memory issues
-chunk_overlap=100
-```
-
 ### Document Processing Issues
 - PDF files: Ensure the PDF is not password-protected
 - DOC files: File must be readable by antiword
 - DOCX files: File must be a valid Office Open XML format
-- If text extraction fails, try converting the document to PDF
+- RTF files: Must be standard RTF format readable by textract
+- If text extraction fails, try converting the document to PDF or TXT
 - If adding a document doesn't update the context, try clearing the context and adding it again
 
 ## Contributing
