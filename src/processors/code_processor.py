@@ -18,7 +18,7 @@ Handles code files like .py, .js, .java, .c, .cpp, .php, etc.
         '.sh', '.bash', '.ps1', '.sql', '.r', '.scala', '.dart',
         '.html', '.css', '.scss', '.less', '.json', '.xml', '.yaml', '.yml',
         '.lua', '.pl', '.pm', '.groovy', '.tsx', '.jsx', '.vb', '.f90',
-        '.clj', '.ex', '.exs'
+        '.clj', '.ex', '.exs', '.md', ''  # Empty string for Dockerfile
     ]
 
     def __init__(self):
@@ -56,13 +56,16 @@ Handles code files like .py, .js, .java, .c, .cpp, .php, etc.
                     file_path = tmp_file.name
 
         try:
-            # Determine the file language for metadata based on extension
-            extension = Path(file_path).suffix.lower()
-            language = self._get_language_from_extension(extension)
-
             # Read the code file with encoding error handling
             with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                 code_content = f.read()
+
+            # Check if this might be a Dockerfile renamed with an extension
+            is_dockerfile = self._is_likely_dockerfile(code_content)
+
+            # Determine the file language for metadata based on extension or content
+            extension = Path(file_path).suffix.lower()
+            language = 'dockerfile' if is_dockerfile else self._get_language_from_extension(extension)
 
             # Create a single document with the extracted text
             # Include language and extension in metadata for potential syntax highlighting
@@ -71,7 +74,8 @@ Handles code files like .py, .js, .java, .c, .cpp, .php, etc.
                 metadata={
                     "source": file_path,
                     "language": language,
-                    "extension": extension
+                    "extension": extension,
+                    "is_dockerfile": is_dockerfile
                 }
             )
 
@@ -84,10 +88,45 @@ Handles code files like .py, .js, .java, .c, .cpp, .php, etc.
             if created_tmp_file and os.path.exists(file_path):
                 os.unlink(file_path)
 
+    def _is_likely_dockerfile(self, content):
+        """
+        Check if the content is likely a Dockerfile by looking for common Dockerfile instructions.
+
+        Args:
+        content: Text content of the file
+
+        Returns:
+        bool: True if the content appears to be a Dockerfile
+        """
+        # Common Dockerfile instructions
+        dockerfile_patterns = [
+            'FROM ', 'RUN ', 'CMD ', 'LABEL ', 'MAINTAINER ', 'EXPOSE ',
+            'ENV ', 'ADD ', 'COPY ', 'ENTRYPOINT ', 'VOLUME ', 'USER ',
+            'WORKDIR ', 'ARG ', 'ONBUILD ', 'STOPSIGNAL ', 'HEALTHCHECK ',
+            'SHELL ['
+        ]
+
+        # Get the first 10 non-empty lines
+        lines = [line.strip() for line in content.split('\n') if line.strip()]
+        first_lines = lines[:10] if lines else []
+
+        # Count how many of the first lines match Dockerfile patterns
+        dockerfile_line_count = 0
+        for line in first_lines:
+            if not line.startswith('#'):  # Skip comments
+                for pattern in dockerfile_patterns:
+                    if line.startswith(pattern):
+                        dockerfile_line_count += 1
+                        break
+
+        # If at least 2 of the first 10 non-comment lines match Dockerfile patterns,
+        # it's likely a Dockerfile
+        return dockerfile_line_count >= 2
+
     def _get_language_from_extension(self, extension):
         """
-Map file extension to programming language name.
-Used for metadata.
+        Map file extension to programming language name.
+        Used for metadata.
         """
         extension_to_language = {
             '.py': 'python',
@@ -130,27 +169,43 @@ Used for metadata.
             '.f90': 'fortran',
             '.clj': 'clojure',
             '.ex': 'elixir',
-            '.exs': 'elixir-script'
+            '.exs': 'elixir-script',
+            '.md': 'markdown',
+            '': 'dockerfile'  # For Dockerfile (no extension)
         }
 
         return extension_to_language.get(extension, 'unknown')
 
     @classmethod
+    @classmethod
     def is_code_file(cls, file_path):
         """
-Check if a file is a supported code file based on its extension.
+        Check if a file is a supported code file based on its extension or name.
 
-Args:
-file_path: Path or file-like object with a name attribute
+        Args:
+        file_path: Path or file-like object with a name attribute
 
-Returns:
-bool: True if the file is a supported code file
+        Returns:
+        bool: True if the file is a supported code file
         """
+        # Handle string paths
         if isinstance(file_path, str):
-            extension = Path(file_path).suffix.lower()
+            path = Path(file_path)
+            file_name = path.name
+            extension = path.suffix.lower()
+        # Handle file-like objects with name attribute
         elif hasattr(file_path, 'name'):
-            extension = Path(file_path.name).suffix.lower()
+            path = Path(file_path.name)
+            file_name = path.name
+            extension = path.suffix.lower()
+        # Handle Path objects
         else:
-            extension = Path(file_path).suffix.lower()
+            path = file_path
+            file_name = path.name
+            extension = path.suffix.lower()
+
+        # Check if it's a Dockerfile (case-insensitive)
+        if file_name.lower() == 'dockerfile':
+            return True
 
         return extension in cls.SUPPORTED_EXTENSIONS

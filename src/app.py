@@ -97,8 +97,7 @@ Handle document querying with role selection
         return f"An error occurred during querying: {str(e)}"
 
 # Get the common code file extensions for the UI (a subset of supported extensions)
-COMMON_CODE_EXTENSIONS = ['.py', '.js', '.java', '.c', '.cpp', '.html', '.css', '.php', '.go', '.ts', '.rb', '.json', '.xml']
-
+COMMON_CODE_EXTENSIONS = ['.py', '.js', '.java', '.c', '.cpp', '.html', '.css', '.php', '.go', '.ts', '.rb', '.json', '.xml', '.md', '.yaml', '.yml']
 # Create Gradio interface
 with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
     gr.Markdown("# DocAnalyzer\nAnalyze documents with Large Language Models")
@@ -125,6 +124,8 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
         # Right column - Document upload section
         with gr.Column(scale=1):
             # Single file upload
+            # Note: Gradio doesn't support files without extensions (like Dockerfile) directly.
+            # Users need to rename Dockerfile to something with an extension (e.g., Dockerfile.txt) before uploading.
             file_input = gr.File(
                 label="Select Document",
                 file_types=[".pdf", ".doc", ".docx", ".txt", ".rtf"] + COMMON_CODE_EXTENSIONS,

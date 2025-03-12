@@ -3,6 +3,7 @@ from src.processors.code_processor import CodeProcessor
 from langchain.schema import Document
 import os
 import tempfile
+import shutil
 
 @pytest.fixture
 def code_processor():
@@ -108,10 +109,110 @@ def test_process_code_content(code_processor):
     assert test_content in chunks[0].page_content
     assert chunks[0].metadata['language'] == 'php'
 
+def test_process_unknown_extension(code_processor):
+    # Create a temporary file with a custom extension that isn't in our map
+    test_content = "Custom code content"
+    file_path = create_temp_file(test_content, '.custom')
+
+    try:
+        chunks = code_processor.process(file_path)
+        # Verify results
+        assert len(chunks) > 0
+        assert all(isinstance(chunk, Document) for chunk in chunks)
+        # Verify content
+        assert test_content in chunks[0].page_content
+        # Verify metadata for unknown extension
+        assert chunks[0].metadata['language'] == 'unknown'
+        assert chunks[0].metadata['extension'] == '.custom'
+    finally:
+        os.unlink(file_path)
+
+def test_process_markdown_file(code_processor):
+    # Create a temporary Markdown file
+    test_content = "# Test Markdown\n\nThis is a *test* of **markdown** processing."
+    file_path = create_temp_file(test_content, '.md')
+
+    try:
+        chunks = code_processor.process(file_path)
+        # Verify results
+        assert len(chunks) > 0
+        assert all(isinstance(chunk, Document) for chunk in chunks)
+        # Verify content
+        assert test_content in chunks[0].page_content
+        # Verify metadata
+        assert chunks[0].metadata['language'] == 'markdown'
+        assert chunks[0].metadata['extension'] == '.md'
+    finally:
+        os.unlink(file_path)
+
+def test_process_dockerfile(code_processor):
+    # Create a temporary Dockerfile
+    test_content = "FROM python:3.9-slim\n\nWORKDIR /app\n\nCOPY . .\n\nRUN pip install -r requirements.txt"
+
+    # Create a file named "Dockerfile" with no extension
+    temp_dir = tempfile.mkdtemp()
+    file_path = os.path.join(temp_dir, "Dockerfile")
+
+    with open(file_path, 'w') as f:
+        f.write(test_content)
+
+    try:
+        chunks = code_processor.process(file_path)
+        # Verify results
+        assert len(chunks) > 0
+        assert all(isinstance(chunk, Document) for chunk in chunks)
+        # Verify content
+        assert test_content in chunks[0].page_content
+        # Verify metadata - extension should be empty string for Dockerfile
+        assert chunks[0].metadata['language'] == 'dockerfile'
+    finally:
+        # Clean up
+        shutil.rmtree(temp_dir)
+
+def test_process_renamed_dockerfile(code_processor):
+    # Create a temporary Dockerfile but save it with a .txt extension
+    test_content = "FROM ubuntu:20.04\n\nRUN apt-get update\n\nCMD [\"bash\"]\n\nEXPOSE 80"
+    file_path = create_temp_file(test_content, '.txt')
+
+    try:
+        chunks = code_processor.process(file_path)
+        # Verify results
+        assert len(chunks) > 0
+        # Verify content
+        assert test_content in chunks[0].page_content
+        # Verify metadata - should detect it's a Dockerfile even with .txt extension
+        assert chunks[0].metadata['language'] == 'dockerfile'
+        assert chunks[0].metadata['is_dockerfile'] == True
+        # The extension should still be .txt
+        assert chunks[0].metadata['extension'] == '.txt'
+    finally:
+        os.unlink(file_path)
+
+def test_process_not_dockerfile(code_processor):
+    # Create a file that is not a Dockerfile
+    test_content = "This is a regular text file\nIt has some content\nBut not Dockerfile instructions"
+    file_path = create_temp_file(test_content, '.txt')
+
+    try:
+        chunks = code_processor.process(file_path)
+        # Verify results
+        assert len(chunks) > 0
+        # Verify it's not detected as a Dockerfile
+        assert chunks[0].metadata['language'] != 'dockerfile'
+        assert not chunks[0].metadata.get('is_dockerfile', False)
+    finally:
+        os.unlink(file_path)
+
 def test_is_code_file():
     # Test the is_code_file static method
     assert CodeProcessor.is_code_file("test.py") == True
     assert CodeProcessor.is_code_file("test.js") == True
+    assert CodeProcessor.is_code_file("test.md") == True
+    assert CodeProcessor.is_code_file("test.yml") == True
+    assert CodeProcessor.is_code_file("test.yaml") == True
+    assert CodeProcessor.is_code_file("Dockerfile") == True
+    assert CodeProcessor.is_code_file("path/to/Dockerfile") == True
+    assert CodeProcessor.is_code_file("dockerfile") == True  # Case insensitive
     assert CodeProcessor.is_code_file("test.txt") == False
     assert CodeProcessor.is_code_file("test.pdf") == False
 
@@ -125,3 +226,8 @@ def test_is_code_file():
         name = "test.doc"
 
     assert CodeProcessor.is_code_file(MockFileInvalid()) == False
+
+    class MockDockerfile:
+        name = "Dockerfile"
+
+    assert CodeProcessor.is_code_file(MockDockerfile()) == True

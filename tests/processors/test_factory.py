@@ -43,7 +43,7 @@ def test_get_processor_invalid():
     # Test invalid file type
     with pytest.raises(ValueError) as excinfo:
         ProcessorFactory.get_processor("test.invalid")
-    assert "Please upload a PDF, DOC, DOCX, TXT, RTF, or code file" in str(excinfo.value)
+    assert "Please upload a supported file type" in str(excinfo.value)
 
 def test_get_processor_with_path_object():
     # Test with Path object

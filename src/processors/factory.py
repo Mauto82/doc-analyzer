@@ -43,4 +43,4 @@ ValueError: If file type is not supported
         elif CodeProcessor.is_code_file(file_path):
             return CodeProcessor()
 
-        raise ValueError("Please upload a PDF, DOC, DOCX, TXT, RTF, or code file (e.g., .py, .js, .java, etc.)")
+        raise ValueError("Please upload a supported file type: PDF, DOC, DOCX, TXT, RTF, Dockerfile, Markdown, YAML, or code file (e.g., .py, .js, .java, etc.)")
