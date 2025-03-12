@@ -1,10 +1,10 @@
-# Modifiche a src/processors/factory.py
 from typing import Union
 from pathlib import Path
 from .base.document_processor import DocumentProcessor
 from .pdf_processor import PDFProcessor
 from .word_processor import WordProcessor
 from .text_processor import TextProcessor
+from .rtf_processor import RtfProcessor
 
 class ProcessorFactory:
     """Factory class for creating document processors"""
@@ -12,16 +12,16 @@ class ProcessorFactory:
     @staticmethod
     def get_processor(file_path: Union[str, Path]) -> DocumentProcessor:
         """
-        Get appropriate processor based on file extension
+Get appropriate processor based on file extension
 
-        Args:
-            file_path: Path to the file
+Args:
+file_path: Path to the file
 
-        Returns:
-            DocumentProcessor: Appropriate processor for the file type
+Returns:
+DocumentProcessor: Appropriate processor for the file type
 
-        Raises:
-            ValueError: If file type is not supported
+Raises:
+ValueError: If file type is not supported
         """
         if isinstance(file_path, str):
             file_path = Path(file_path)
@@ -37,5 +37,7 @@ class ProcessorFactory:
             return WordProcessor()
         elif extension == '.txt':
             return TextProcessor()
+        elif extension == '.rtf':
+            return RtfProcessor()
 
-        raise ValueError("Please upload a PDF, DOC, DOCX, or TXT file")
+        raise ValueError("Please upload a PDF, DOC, DOCX, TXT, or RTF file")
