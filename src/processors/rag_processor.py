@@ -108,6 +108,36 @@ class RAGProcessor:
 
         return ids
 
+    def remove_document(self, document_ids):
+        """
+        Remove specific documents from the vector database by their IDs
+
+        Args:
+        document_ids: List of document IDs to remove
+
+        Returns:
+        bool: True if successful, False otherwise
+        """
+        if not document_ids:
+            return False
+
+        self._ensure_db()
+
+        if self.vectordb is None:
+            return False
+
+        try:
+            # Remove the documents by their IDs
+            self.vectordb.delete(ids=document_ids)
+
+            if self.persist_db:
+                self.vectordb.persist()
+
+            return True
+        except Exception as e:
+            print(f"Error removing documents: {str(e)}")
+            return False
+
     def query(self, question, role="default", model=None):
         """
         Query the existing vector database with role-based context

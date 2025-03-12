@@ -30,9 +30,9 @@ app.add_middleware(
 
 rag_processor = RAGProcessor()
 
-# Global storage for tracking uploaded files
+# Global storage for tracking uploaded files with their document IDs
 UPLOAD_DIR = "./temp_uploads"
-processed_files = []
+processed_files_map = {}  # {file_name: [document_ids]}
 
 # Get available LLM models from Ollama
 available_models = rag_processor.get_available_models()
@@ -50,7 +50,7 @@ def add_file_to_context(file_obj):
     """
     Process a single file and add it to the existing context
     """
-    global processed_files
+    global processed_files_map
 
     if file_obj is None:
         return [["No files in context"]], None
@@ -64,27 +64,57 @@ def add_file_to_context(file_obj):
         chunks = processor.process(file_obj)
 
         # Add to existing context without clearing
-        rag_processor.add_document(chunks)
+        ids = rag_processor.add_document(chunks)
 
-        # Add to tracked files
-        processed_files.append(file_name)
+        # Add to tracked files with document IDs
+        processed_files_map[file_name] = ids
 
         # Return status with current context as a table data
-        files_table = [[file] for file in processed_files]
+        files_table = [[file] for file in processed_files_map.keys()]
         return files_table, None
     except ValueError as e:
         return [[f"Error: {str(e)}"]], None
     except Exception as e:
         return [[f"An error occurred while processing: {str(e)}"]], None
 
+def remove_file_from_context(file_name):
+    """
+    Remove a single file from the context
+    """
+    global processed_files_map
+
+    if not file_name or file_name not in processed_files_map:
+        return [["No files in context"]]
+
+    # Get document IDs for this file
+    doc_ids = processed_files_map[file_name]
+
+    # Remove from vector database
+    success = rag_processor.remove_document(doc_ids)
+
+    if success:
+        # Remove from tracked files
+        del processed_files_map[file_name]
+
+        if not processed_files_map:
+            return [["No files in context"]]
+        else:
+            # Return updated context
+            files_table = [[file] for file in processed_files_map.keys()]
+            return files_table
+    else:
+        # Keep the file in the list if removal failed
+        files_table = [[file] for file in processed_files_map.keys()]
+        return files_table
+
 def clear_context():
     """
     Clear all files from context and reset the vector database
     """
-    global processed_files
+    global processed_files_map
 
-    # Reset the list of tracked files
-    processed_files = []
+    # Reset the tracked files
+    processed_files_map = {}
 
     # Clear the vector database
     rag_processor._clean_db()
@@ -98,7 +128,7 @@ def query_document(question, role, model=None):
     if not question.strip():
         return "Please enter a question"
 
-    if not processed_files:
+    if not processed_files_map:
         return "No documents in context. Please upload at least one document first."
 
     try:
@@ -164,14 +194,23 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
             context_status = gr.Dataframe(
                 headers=["Files in Context"],
                 datatype=["str"],
-                row_count=5,
+                row_count=10,
                 col_count=(1, "fixed"),
                 value=[["No documents in context"]],
                 height=200
             )
 
-            # Clear context button
-            clear_context_button = gr.Button("Clear Context", variant="stop")
+            # Dropdown for selecting a file to remove
+            file_to_remove = gr.Dropdown(
+                choices=[],
+                label="Select file to remove",
+                interactive=True
+            )
+
+            # Remove file and clear context buttons
+            with gr.Row():
+                remove_file_button = gr.Button("Remove Selected File")
+                clear_context_button = gr.Button("Clear Context", variant="stop")
 
     def add_text(history, text, role):
         if not text:
@@ -187,18 +226,39 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
         history[-1] = (user_message, bot_message)
         return history
 
+    def update_file_dropdown():
+        return gr.Dropdown(choices=list(processed_files_map.keys()))
+
     # Document handling events
     add_to_context_button.click(
-        fn=add_file_to_context,
-        inputs=[file_input],
-        outputs=[context_status, file_input]
-    )
+            fn=add_file_to_context,
+            inputs=[file_input],
+            outputs=[context_status, file_input]
+        ).then(
+            fn=update_file_dropdown,
+            inputs=[],
+            outputs=[file_to_remove]
+        )
+
+    remove_file_button.click(
+            fn=remove_file_from_context,
+            inputs=[file_to_remove],
+            outputs=[context_status]
+        ).then(
+            fn=update_file_dropdown,
+            inputs=[],
+            outputs=[file_to_remove]
+        )
 
     clear_context_button.click(
-        fn=clear_context,
-        inputs=[],
-        outputs=[context_status]
-    )
+            fn=clear_context,
+            inputs=[],
+            outputs=[context_status]
+        ).then(
+            fn=update_file_dropdown,
+            inputs=[],
+            outputs=[file_to_remove]
+        )
 
     # Chat events
     question_input.submit(

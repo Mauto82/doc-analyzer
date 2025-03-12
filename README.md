@@ -162,6 +162,7 @@ Doc Analyzer supports a wide range of file formats:
    - All uploaded documents are accumulated in the context
    - Each document's content is indexed and made available for querying
    - You can view the current context in the "Context Status" area
+   - To remove a specific document, select it from the dropdown and click "Remove Selected File"
    - To remove all documents, click the "Clear Context" button
    - Clearing the context resets the vector database completely
 
