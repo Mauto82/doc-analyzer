@@ -34,9 +34,21 @@ rag_processor = RAGProcessor()
 UPLOAD_DIR = "./temp_uploads"
 processed_files = []
 
+# Get available LLM models from Ollama
+available_models = rag_processor.get_available_models()
+default_model = os.getenv('LLM_MODEL')
+
+# If the default model is not in the list, add it at the top
+if default_model not in available_models:
+    available_models.insert(0, default_model)
+else:
+    # Make sure the default model is at the top of the list
+    available_models.remove(default_model)
+    available_models.insert(0, default_model)
+
 def add_file_to_context(file_obj):
     """
-Process a single file and add it to the existing context
+    Process a single file and add it to the existing context
     """
     global processed_files
 
@@ -67,7 +79,7 @@ Process a single file and add it to the existing context
 
 def clear_context():
     """
-Clear all files from context and reset the vector database
+    Clear all files from context and reset the vector database
     """
     global processed_files
 
@@ -79,9 +91,9 @@ Clear all files from context and reset the vector database
 
     return [["Context cleared. All documents have been removed."]]
 
-def query_document(question, role):
+def query_document(question, role, model=None):
     """
-Handle document querying with role selection
+    Handle document querying with role selection and model selection
     """
     if not question.strip():
         return "Please enter a question"
@@ -90,7 +102,7 @@ Handle document querying with role selection
         return "No documents in context. Please upload at least one document first."
 
     try:
-        return rag_processor.query(question, role)
+        return rag_processor.query(question, role, model)
     except ValueError as e:
         return str(e)
     except Exception as e:
@@ -98,34 +110,47 @@ Handle document querying with role selection
 
 # Get the common code file extensions for the UI (a subset of supported extensions)
 COMMON_CODE_EXTENSIONS = ['.py', '.js', '.java', '.c', '.cpp', '.html', '.css', '.php', '.go', '.ts', '.rb', '.json', '.xml', '.md', '.yaml', '.yml']
+
 # Create Gradio interface
 with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
-    gr.Markdown("# DocAnalyzer\nAnalyze documents with Large Language Models")
+    gr.Markdown("# DocAnalyzer\nAnalyze documents with local Large Language Models")
 
     with gr.Row():
-        # Left column - Chat section
+        # Left column - Chat interface
         with gr.Column(scale=2):
-            chatbot = gr.Chatbot(height=400)
+            # Top row - Dropdown selectors
             with gr.Row():
-                with gr.Column(scale=3):
-                    question_input = gr.Textbox(
-                        show_label=False,
-                        placeholder="Ask a question about the documents...",
-                        container=False
-                    )
-                with gr.Column(scale=2):
+                with gr.Column(scale=1):
                     role_input = gr.Dropdown(
                         choices=list(ROLE_PROMPTS.keys()),
                         value="default",
                         label="Analysis Role"
                     )
-            query_button = gr.Button("Send")
+                with gr.Column(scale=1):
+                    model_input = gr.Dropdown(
+                        choices=available_models,
+                        value=default_model,
+                        label="LLM Model"
+                    )
+
+            # Middle row - Chat section
+            with gr.Row():
+                chatbot = gr.Chatbot(height=400)
+
+            # Bottom row - Input and Send button
+            with gr.Row():
+                with gr.Column(scale=8):
+                    question_input = gr.Textbox(
+                        show_label=False,
+                        placeholder="Ask a question about the documents...",
+                        container=False
+                    )
+                with gr.Column(scale=1):
+                    query_button = gr.Button("Send")
 
         # Right column - Document upload section
         with gr.Column(scale=1):
             # Single file upload
-            # Note: Gradio doesn't support files without extensions (like Dockerfile) directly.
-            # Users need to rename Dockerfile to something with an extension (e.g., Dockerfile.txt) before uploading.
             file_input = gr.File(
                 label="Select Document",
                 file_types=[".pdf", ".doc", ".docx", ".txt", ".rtf"] + COMMON_CODE_EXTENSIONS,
@@ -154,11 +179,11 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
         history = history + [(text, None)]
         return history
 
-    def bot_response(history, role):
+    def bot_response(history, role, model):
         if not history:
             return history
         user_message = history[-1][0]
-        bot_message = query_document(user_message, role)
+        bot_message = query_document(user_message, role, model)
         history[-1] = (user_message, bot_message)
         return history
 
@@ -182,7 +207,7 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
             [chatbot]
         ).then(
             bot_response,
-            [chatbot, role_input],
+            [chatbot, role_input, model_input],
             [chatbot]
         ).then(lambda: "", None, [question_input])
 
@@ -192,7 +217,7 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
             [chatbot]
         ).then(
             bot_response,
-            [chatbot, role_input],
+            [chatbot, role_input, model_input],
             [chatbot]
         ).then(lambda: "", None, [question_input])
 

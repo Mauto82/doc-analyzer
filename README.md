@@ -11,6 +11,7 @@ Doc Analyzer enables users to:
 - Analyze Dockerfiles (renamed with an extension like .txt)
 - Add multiple documents to the context
 - Ask questions about document content
+- **Select from available LLM models installed in Ollama**
 - Receive AI-generated responses based on document content
 - Process documents using state-of-the-art language models
 
@@ -94,7 +95,7 @@ cp .env.example .env
 OLLAMA_HOST=host.docker.internal  # Use 'localhost' for local dev
 OLLAMA_PORT=11434
 CHROMA_DB_PATH=/app/data/chroma
-LLM_MODEL=deepseek-r1:14b  # Use your preferred Ollama model
+LLM_MODEL=deepseek-r1:14b  # Default model (used as fallback if selected model is unavailable)
 CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
 PERSIST_VECTORDB=false
@@ -172,6 +173,7 @@ Doc Analyzer supports a wide range of file formats:
      - Financial: Financial implications and economic analysis
      - Travel: Travel-related insights and recommendations
      - Technical: Technical details and implementation analysis
+   - Select an LLM model from the dropdown (models are automatically populated from Ollama)
    - Click "Send" or press Enter
    - Receive role-specific AI-generated responses based on all documents in context
 
@@ -181,10 +183,11 @@ Doc Analyzer supports a wide range of file formats:
    - The AI will combine relevant information from different documents to provide comprehensive answers
    - The more specific your question, the more targeted the response will be
 
-5. **Code File Analysis**
-   - Code files are processed with language-specific understanding
-   - Ask technical questions about code structure, patterns, or implementation
-   - The system includes language information in metadata to provide context-aware responses
+5. **Model Selection**
+   - All models available in your Ollama installation are displayed in the dropdown
+   - The default model from your `.env` file is preselected
+   - The system will fall back to the default model if the selected model is unavailable
+   - Different models may be better suited for different types of documents or questions
 
 ## Best Practices
 
