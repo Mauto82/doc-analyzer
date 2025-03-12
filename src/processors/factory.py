@@ -5,6 +5,7 @@ from .pdf_processor import PDFProcessor
 from .word_processor import WordProcessor
 from .text_processor import TextProcessor
 from .rtf_processor import RtfProcessor
+from .code_processor import CodeProcessor
 
 class ProcessorFactory:
     """Factory class for creating document processors"""
@@ -39,5 +40,7 @@ ValueError: If file type is not supported
             return TextProcessor()
         elif extension == '.rtf':
             return RtfProcessor()
+        elif CodeProcessor.is_code_file(file_path):
+            return CodeProcessor()
 
-        raise ValueError("Please upload a PDF, DOC, DOCX, TXT, or RTF file")
+        raise ValueError("Please upload a PDF, DOC, DOCX, TXT, RTF, or code file (e.g., .py, .js, .java, etc.)")

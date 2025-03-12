@@ -8,6 +8,7 @@ import shutil
 from src.processors.factory import ProcessorFactory
 from src.processors.rag_processor import RAGProcessor
 from src.config.prompts import ROLE_PROMPTS
+from src.processors.code_processor import CodeProcessor
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -95,6 +96,9 @@ Handle document querying with role selection
     except Exception as e:
         return f"An error occurred during querying: {str(e)}"
 
+# Get the common code file extensions for the UI (a subset of supported extensions)
+COMMON_CODE_EXTENSIONS = ['.py', '.js', '.java', '.c', '.cpp', '.html', '.css', '.php', '.go', '.ts', '.rb', '.json', '.xml']
+
 # Create Gradio interface
 with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
     gr.Markdown("# DocAnalyzer\nAnalyze documents with Large Language Models")
@@ -123,7 +127,7 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
             # Single file upload
             file_input = gr.File(
                 label="Select Document",
-                file_types=[".pdf", ".doc", ".docx", ".txt", ".rtf"],  # Aggiunto .rtf
+                file_types=[".pdf", ".doc", ".docx", ".txt", ".rtf"] + COMMON_CODE_EXTENSIONS,
                 file_count="single"
             )
 
