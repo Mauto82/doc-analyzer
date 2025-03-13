@@ -49,6 +49,8 @@ doc-analyzer/
 │   └── unit/                   # Unit tests
 │       ├── test_app.py
 │       └── test_rag_processor.py
+│       └── test_rag_processor.py
+│       └── test_rag_processor.py
 ├── data/                       # Data directory
 │   └── chroma/                 # ChromaDB storage
 ├── Dockerfile                  # Container definition

@@ -1,3 +1,24 @@
+import pytest
+from src.processors.rag_processor import RAGProcessor
+from langchain.schema import Document
+import os
+
+@pytest.fixture
+def rag_processor(monkeypatch):
+    # Set required environment variables for tests
+    monkeypatch.setenv('OLLAMA_HOST', 'localhost')
+    monkeypatch.setenv('OLLAMA_PORT', '11434')
+    monkeypatch.setenv('LLM_MODEL', 'test-model')  # Explicitly set model for tests
+    return RAGProcessor()
+
+@pytest.fixture
+def sample_chunks():
+    return [
+        Document(page_content="Test content 1", metadata={"source": "test1.pdf"}),
+        Document(page_content="Test content 2", metadata={"source": "test2.docx"}),
+        Document(page_content="Test content 3", metadata={"source": "test3.doc"})
+    ]
+
 def test_remove_document(rag_processor, sample_chunks, mocker):
     # Mock embeddings
     mocker.patch.object(rag_processor, 'embeddings')

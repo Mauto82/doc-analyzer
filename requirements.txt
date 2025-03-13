@@ -10,3 +10,7 @@ ollama==0.1.6
 langchain-community==0.0.10
 python-docx==0.8.11
 textract==1.6.5
+pandas>=1.5.0
+numpy>=1.20.0
+openpyxl>=3.0.10
+odfpy>=1.4.1

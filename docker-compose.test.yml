@@ -11,4 +11,5 @@ services:
       bash -c "
         export PYTHONPATH=/app &&
         cd /app &&
+        pip install openpyxl --no-cache-dir &&
         pytest tests/ -v"

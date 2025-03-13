@@ -15,6 +15,10 @@ setup(
         "python-multipart",
         "python-dotenv",
         "ollama",
-        "langchain-community"
+        "langchain-community",
+        "pandas",
+        "numpy",
+        "openpyxl",
+        "odfpy"
     ],
 )

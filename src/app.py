@@ -3,12 +3,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
 import os
-import tempfile
 import shutil
 from src.processors.factory import ProcessorFactory
 from src.processors.rag_processor import RAGProcessor
 from src.config.prompts import ROLE_PROMPTS
-from src.processors.code_processor import CodeProcessor
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -141,6 +139,9 @@ def query_document(question, role, model=None):
 # Get the common code file extensions for the UI (a subset of supported extensions)
 COMMON_CODE_EXTENSIONS = ['.py', '.js', '.java', '.c', '.cpp', '.html', '.css', '.php', '.go', '.ts', '.rb', '.json', '.xml', '.md', '.yaml', '.yml']
 
+# Get the tabular file extensions
+TABLE_EXTENSIONS = ['.xlsx', '.xls', '.csv', '.ods', '.json']
+
 # Create Gradio interface
 with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
     gr.Markdown("# DocAnalyzer\nAnalyze documents with local Large Language Models")
@@ -183,7 +184,7 @@ with gr.Blocks(title="DocAnalyzer", theme=gr.themes.Soft()) as interface:
             # Single file upload
             file_input = gr.File(
                 label="Select Document",
-                file_types=[".pdf", ".doc", ".docx", ".txt", ".rtf"] + COMMON_CODE_EXTENSIONS,
+                file_types=[".pdf", ".doc", ".docx", ".txt", ".rtf"] + COMMON_CODE_EXTENSIONS + TABLE_EXTENSIONS,
                 file_count="single"
             )
 
