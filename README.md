@@ -200,11 +200,12 @@ The tabular data processor enhances the ability to query:
 3. **Ask Questions**
    - Type your question in the text input
    - Select an analysis role from the dropdown:
-     - Default: General document analysis
-     - Legal: Legal implications and compliance analysis
-     - Financial: Financial implications and economic analysis
-     - Travel: Travel-related insights and recommendations
-     - Technical: Technical details and implementation analysis
+     - General document analysis with comprehensive and objective information
+     - Legal: Legal implications, regulatory requirements, and potential legal risks
+     - Financial: Financial analysis, costs, benefits, ROI, and economic considerations
+     - Travel: Objective analysis of travel information, logistics, attractions, and practical advice
+     - Travel Agent: Conversational travel recommendations with a warm, personal tone (emulates a real travel agent)
+     - Technical: Technical details, implementation specifics, and architectural considerations
    - Select an LLM model from the dropdown (models are automatically populated from Ollama)
    - Click "Send" or press Enter
    - Receive role-specific AI-generated responses based on all documents in context
