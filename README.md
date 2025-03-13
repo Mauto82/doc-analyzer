@@ -158,29 +158,25 @@ Doc Analyzer supports a wide range of file formats:
 
 ## Tabular Data Processing
 
-Doc Analyzer provides robust capabilities for processing tabular data:
+Doc Analyzer provides robust capabilities for tabular data processing:
 
 ### Features
-- **Smart Table Detection**: Automatically recognizes and properly parses various tabular formats
-- **Statistical Analysis**: Calculates relevant statistics for numeric columns (min, max, mean, median)
-- **Categorical Data Analysis**: Identifies most common values in categorical columns
-- **Date Analysis**: Detects date columns and provides date range information
-- **Chunking for Large Tables**: Automatically splits large tables into manageable chunks while preserving context
-- **Multi-sheet Support**: Processes all sheets in Excel and ODS documents
+- **Streamlined conversion**: Automatically converts various tabular formats into text for optimal analysis
+- **Multi-format support**: Handles CSV, Excel, ODS, and structured JSON
+- **Multi-sheet processing**: Processes all sheets in Excel and ODS documents
+- **Natural analysis**: Preserves the original data format to facilitate querying
 
-### Analytics Capabilities
-The tabular data processor enhances your ability to query:
-- Statistical summaries of numerical data
-- Frequency distributions of categorical data
-- Temporal patterns in date-based data
-- Relationships between different data fields
+### Analysis Capabilities
+The tabular data processor enhances the ability to query:
+- Tabular data in various formats
+- Complex spreadsheets with multiple sheets
+- CSV files with non-standard formatting
 
-### Usage Tips for Tabular Data
-- For CSV files with non-standard formatting, the system attempts to automatically detect delimiters
-- Large tables are chunked for better processing, with metadata preserving the relationship between chunks
+### Tips for Using Tabular Data
+- For CSV files with non-standard formatting, the system attempts to detect delimiters automatically
 - When asking questions about tabular data, specify column names for more precise answers
-- Statistical questions (averages, maximums, trends) are particularly effective with tabular data
-- For multi-sheet Excel files, you can reference specific sheets in your questions
+- Statistical queries (averages, maxima, trends) are particularly effective with tabular data
+- For Excel files with multiple sheets, you can reference specific sheets in your queries  
 
 ## Usage Guide
 
