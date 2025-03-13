@@ -46,11 +46,12 @@ doc-analyzer/
 │   │   ├── test_factory.py
 │   │   └── test_word_processor.py
 │   │   └── test_text_processor.py
+│   │   └── test_table_processor.py
 │   └── unit/                   # Unit tests
 │       ├── test_app.py
+│       └── test_app_remove_file.py
 │       └── test_rag_processor.py
-│       └── test_rag_processor.py
-│       └── test_rag_processor.py
+│       └── test_rag_processor_remove.py
 ├── data/                       # Data directory
 │   └── chroma/                 # ChromaDB storage
 ├── Dockerfile                  # Container definition
@@ -128,6 +129,12 @@ Doc Analyzer supports a wide range of file formats:
 - Plain Text (`.txt`)
 - Markdown (`.md`)
 
+### Tabular Data Files
+- Excel (`.xlsx`, `.xls`)
+- CSV (`.csv`)
+- OpenDocument Spreadsheet (`.ods`)
+- JSON (`.json`) - structured as tabular data
+
 ### Configuration Files
 - YAML (`.yaml`, `.yml`)
 
@@ -148,6 +155,32 @@ Doc Analyzer supports a wide range of file formats:
 
 ### Special Files
 - **Dockerfiles**: Due to Gradio UI limitations, Dockerfiles (which have no extension) must be renamed with an extension (e.g., `Dockerfile.txt`) before uploading. The system will automatically detect Dockerfile content based on common instructions.
+
+## Tabular Data Processing
+
+Doc Analyzer provides robust capabilities for processing tabular data:
+
+### Features
+- **Smart Table Detection**: Automatically recognizes and properly parses various tabular formats
+- **Statistical Analysis**: Calculates relevant statistics for numeric columns (min, max, mean, median)
+- **Categorical Data Analysis**: Identifies most common values in categorical columns
+- **Date Analysis**: Detects date columns and provides date range information
+- **Chunking for Large Tables**: Automatically splits large tables into manageable chunks while preserving context
+- **Multi-sheet Support**: Processes all sheets in Excel and ODS documents
+
+### Analytics Capabilities
+The tabular data processor enhances your ability to query:
+- Statistical summaries of numerical data
+- Frequency distributions of categorical data
+- Temporal patterns in date-based data
+- Relationships between different data fields
+
+### Usage Tips for Tabular Data
+- For CSV files with non-standard formatting, the system attempts to automatically detect delimiters
+- Large tables are chunked for better processing, with metadata preserving the relationship between chunks
+- When asking questions about tabular data, specify column names for more precise answers
+- Statistical questions (averages, maximums, trends) are particularly effective with tabular data
+- For multi-sheet Excel files, you can reference specific sheets in your questions
 
 ## Usage Guide
 
@@ -229,10 +262,12 @@ The application consists of several components:
   - Identifies Dockerfiles based on content patterns
 
 ### RAG Processor
-- Creates embeddings using DeepSeek
+- Creates embeddings using various language models via Ollama
 - Stores vectors in ChromaDB
 - Retrieves relevant content for queries
-- Generates responses using DeepSeek
+- Generates responses using selectable AI models
+- Supports model selection directly from the interface
+- Automatically uses available Ollama models
 
 ### Vector Store (ChromaDB)
 - Stores document embeddings from multiple documents
