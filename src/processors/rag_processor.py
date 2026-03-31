@@ -6,7 +6,7 @@ import ollama
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointIdsList, PointStruct, VectorParams
 
-from src.config.prompts import BASE_PROMPT, ROLE_PROMPTS
+from src.config.prompts import BASE_PROMPT, registry as prompt_registry
 from src.models.document import Document
 
 VECTOR_SIZE = 1024          # mxbai-embed-large output dimension
@@ -213,9 +213,9 @@ class RAGProcessor:
         model: Optional[str] = None,
     ) -> Generator[str, None, None]:
         """Yield response tokens progressively as the LLM generates them."""
-        if role not in ROLE_PROMPTS:
+        if role not in prompt_registry:
             raise ValueError(
-                f"Invalid role. Must be one of: {', '.join(ROLE_PROMPTS.keys())}"
+                f"Invalid role. Must be one of: {', '.join(prompt_registry.keys())}"
             )
 
         query_model = model or self.model_name
@@ -243,7 +243,7 @@ class RAGProcessor:
         context = "\n\n".join(p.payload["page_content"] for p in all_points[:4])
 
         prompt = BASE_PROMPT.format(
-            role_prompt=ROLE_PROMPTS[role],
+            role_prompt=prompt_registry.get_prompt(role),
             context=context,
             question=question,
         )

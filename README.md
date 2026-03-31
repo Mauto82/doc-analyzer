@@ -9,11 +9,12 @@ Doc Analyzer enables you to:
 - Process **30+ code file formats** (Python, JS, Java, Go, Rust, and more)
 - Handle **tabular data** (Excel, CSV, ODS, JSON)
 - Process **Markdown** and **YAML** files
-- Add multiple documents to the context and query across all of them
-- Ask questions and get **streaming AI responses** generated progressively
+- Organize documents into **named collections** and query across multiple collections simultaneously
+- Switch between **in-memory** (volatile) and **persistent** storage from the UI
+- Ask questions and get **streaming AI responses** rendered in Markdown
 - Select any **LLM model** installed in Ollama
-- Use a **dedicated embedding model** (`mxbai-embed-large`) separate from the LLM
-- Extract text from **scanned or vector-path PDFs** via OCR fallback
+- Choose an **analysis role** (legal, financial, technical…) and add custom ones without touching the code
+- Extract text from **scanned or vector-path PDFs** via automatic OCR fallback
 
 The application uses:
 - **Ollama** — local LLM inference and embeddings
@@ -26,29 +27,38 @@ The application uses:
 ```
 doc-analyzer/
 ├── src/
-│   ├── app.py                      # FastAPI app + inline HTML/JS frontend
+│   ├── app.py                          # FastAPI routes + inline HTML/JS frontend
 │   ├── config/
-│   │   └── prompts.py              # Role-based prompts
+│   │   └── prompts.py                  # PromptRegistry: auto-discovers src/prompts/
 │   ├── models/
-│   │   └── document.py             # Document dataclass
+│   │   └── document.py                 # Document dataclass
+│   ├── prompts/                        # Role prompt files — add .md to create new roles
+│   │   ├── default.md
+│   │   ├── financial.md
+│   │   ├── legal.md
+│   │   ├── technical.md
+│   │   ├── travel.md
+│   │   └── travel_agent.md
+│   ├── services/
+│   │   └── document_service.py         # State management and document orchestration
 │   ├── utils/
-│   │   └── text_splitter.py        # Recursive text splitter
+│   │   └── text_splitter.py            # Recursive character text splitter
 │   └── processors/
 │       ├── base/
-│       │   └── document_processor.py
-│       ├── factory.py
-│       ├── pdf_processor.py        # PDF + OCR fallback
+│       │   └── document_processor.py   # Abstract base with shared utilities
+│       ├── factory.py                  # Extension → processor registry
+│       ├── pdf_processor.py            # PDF + OCR fallback
 │       ├── word_processor.py
 │       ├── text_processor.py
 │       ├── rtf_processor.py
 │       ├── code_processor.py
 │       ├── table_processor.py
-│       └── rag_processor.py        # Qdrant + Ollama RAG
+│       └── rag_processor.py            # Qdrant + Ollama RAG engine
 ├── tests/
 │   ├── processors/
 │   └── unit/
 ├── data/
-│   └── qdrant/                     # Qdrant file storage (when PERSIST_VECTORDB=true)
+│   └── qdrant/                         # Qdrant file storage (PERSIST_VECTORDB=true)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── docker-compose.test.yml
@@ -121,19 +131,24 @@ CHUNK_OVERLAP=200
 
 > **Docker note:** `docker-compose.yml` automatically overrides `OLLAMA_HOST` to `host.docker.internal` so the container can reach Ollama on the host machine.
 
-> **Qdrant persistence:** With `PERSIST_VECTORDB=false` (default), the vector store is in-memory and resets on every restart. Set to `true` to persist data in `./data/qdrant` (volume-mounted in Docker).
+> **Qdrant persistence:** With `PERSIST_VECTORDB=false` (default), the vector store is in-memory and resets on every restart. Set to `true` to persist data in `./data/qdrant` (volume-mounted in Docker). You can also switch modes at runtime from the UI toggle without editing `.env`.
 
 ## API Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/` | Web interface |
-| `GET` | `/api/status` | Server status, loaded files, available models |
-| `POST` | `/api/upload` | Upload and index a document |
-| `DELETE` | `/api/files/{name}` | Remove a specific document from context |
+| `GET` | `/api/status` | Server status, files, models, roles |
+| `POST` | `/api/mode` | Switch between `memory` and `persist` |
+| `GET` | `/api/collections` | List collections |
+| `POST` | `/api/collections` | Create a collection |
+| `DELETE` | `/api/collections/{name}` | Delete a collection |
+| `POST` | `/api/upload` | Upload and index a document (form field: `collection`) |
+| `DELETE` | `/api/collections/{col}/files/{file}` | Remove a file from a collection |
 | `DELETE` | `/api/files` | Clear all documents |
 | `POST` | `/api/query` | Query (full response) |
 | `POST` | `/api/query/stream` | Query with SSE streaming response |
+| `POST` | `/api/prompts/reload` | Reload prompts from disk without restart |
 
 ## Supported File Types
 
@@ -156,44 +171,64 @@ CHUNK_OVERLAP=200
 ### Code Files
 Python, JavaScript, TypeScript, Java, C/C++, C#, PHP, Go, Ruby, Rust, HTML, CSS, and many more.
 
-> **Dockerfiles** have no extension — rename them (e.g. `Dockerfile.txt`) before uploading. The processor will detect Dockerfile content automatically.
+> **Dockerfiles** have no extension — rename them (e.g. `Dockerfile.txt`) before uploading. The processor detects Dockerfile content automatically.
 
 ## Usage
 
-1. **Upload documents** — click "Upload Document" in the sidebar. Each file is chunked and indexed into the vector store. Multiple documents can be loaded simultaneously.
+### Documents and collections
 
-2. **Ask questions** — type in the chat input and press Enter (or Shift+Enter for newline). The response streams progressively as the model generates it.
+**Memory mode** (default): one implicit collection, files are lost on restart. Ideal for quick sessions.
 
-3. **Select role** — choose an analysis perspective:
-   - **default** — general document analysis
-   - **legal** — legal implications and regulatory analysis
-   - **financial** — costs, ROI, economic considerations
-   - **technical** — implementation details and architecture
-   - **travel** — travel info, logistics, attractions
-   - **travel_agent** — conversational travel recommendations
+**Persist mode**: toggle the switch in the header to enable. Documents are saved to disk and survive restarts. You can create named collections to organize documents by topic, project, or type.
 
-4. **Select model** — all models installed in Ollama are available. The default from `.env` is preselected.
+1. **Upload documents** — click "Upload Document". In persist mode, select the target collection first.
+2. **Query across collections** — use the checkboxes to select which collections to include in the search.
+3. **Remove documents** — click `×` next to a file, or "Clear All" to reset everything.
 
-5. **Remove documents** — click `×` next to a file to remove it from context, or "Clear All" to reset everything.
+### Chat
+
+- Type your question and press **Enter** (Shift+Enter for newline)
+- Responses stream progressively and render **Markdown** (code blocks, lists, bold, etc.)
+- Select a **role** to frame the analysis perspective
+- Select a **model** — all models installed in Ollama are available
+
+### Custom roles
+
+Add a file to `src/prompts/` and press the `↻` button in the header — no restart needed.
+
+**File format** (`src/prompts/my_role.md`):
+```markdown
+# My Role Name
+
+Instructions for the model. Describe the persona, focus areas,
+and tone. This text is injected into every RAG prompt when
+this role is selected.
+```
+
+- The `# Heading` becomes the display name in the UI select
+- The filename stem (`my_role`) becomes the key sent in API requests
+- `default.md` is always listed first; others appear in alphabetical order
 
 ## Architecture
 
-### Frontend
-Vanilla HTML/JS page served by FastAPI. No framework, no build step, no CDN dependencies. Communicates with the backend via REST (`fetch`) and reads streaming responses using the `ReadableStream` API.
+### Service layer (`document_service.py`)
+Centralises all document state and orchestration. FastAPI routes are thin HTTP adapters that delegate to the service — no global state, no business logic in route handlers.
 
 ### RAG Processor (`rag_processor.py`)
+- Accepts injected Ollama and Qdrant clients (Dependency Injection) — fully testable without environment setup
 - Embeds chunks using `mxbai-embed-large` via `ollama.Client.embed()`
 - Stores vectors in Qdrant (cosine distance, 1024 dimensions)
-- On query: embeds the question, retrieves top-4 chunks, builds a prompt with context, generates the answer via `ollama.Client.chat()`
-- Streaming: `chat(stream=True)` returns a generator; each token is forwarded as an SSE event
-- Automatic retry with progressive truncation (80% each attempt) when a chunk exceeds the embedding model's context length
+- On query: embeds the question, retrieves top-4 chunks per collection, merges and re-ranks globally, generates the answer via `ollama.Client.chat(stream=True)`
+- Automatic retry with progressive truncation (up to 12 attempts at 80% each) when a chunk exceeds the embedding model's context length
+
+### Prompt Registry (`config/prompts.py`)
+Auto-discovers `*.md` files from `src/prompts/`, parses display name from the first `# Heading`, exposes `reload()` for hot-reload without restart.
 
 ### PDF Processor (`pdf_processor.py`)
-- Extracts text with PyMuPDF (`fitz`)
-- If a page returns no text (scanned PDF or vector-path text from macOS Quartz), falls back to OCR: renders the page at 300 DPI and runs `pytesseract.image_to_string()`
+Extracts text with PyMuPDF (`fitz`). If a page returns no text (scanned PDF or vector-path text), falls back to OCR: renders at 300 DPI and runs `pytesseract.image_to_string()`.
 
-### Vector Store
-Qdrant in in-memory mode (`:memory:`) by default, or file-based when `PERSIST_VECTORDB=true`. Each chunk is stored as a point with its text and source metadata. Documents are removed by their chunk UUIDs.
+### Factory (`factory.py`)
+Extension → processor class registry (`dict`). Adding support for a new format is one line. Falls back to `CodeProcessor` for 40+ code extensions and Dockerfiles without extension.
 
 ## Running Tests
 
@@ -206,34 +241,36 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
+92 tests covering: RAG processor, document service, prompt registry, all processors, API endpoints.
+
 ## Troubleshooting
 
 ### Ollama not reachable
 - Local dev: verify `OLLAMA_HOST=localhost` and Ollama is running (`ollama list`)
-- Docker: `OLLAMA_HOST` is overridden to `host.docker.internal` automatically
+- Docker: `OLLAMA_HOST` is automatically overridden to `host.docker.internal`
 - Check: `curl http://localhost:11434/api/tags`
 
 ### "No content extracted" on PDF upload
-The PDF likely contains only scanned images or vector-drawn text. Make sure `pytesseract` and `tesseract-ocr` are installed (they are included in the Docker image). For local dev:
+The PDF likely contains only scanned images or vector-drawn text. Make sure `tesseract-ocr` is installed (included in the Docker image). For local dev:
 ```bash
-brew install tesseract        # macOS
+brew install tesseract          # macOS
 sudo apt install tesseract-ocr  # Ubuntu/Debian
 pip install pytesseract Pillow
 ```
 
 ### "Input length exceeds context length" during upload
-This is handled automatically — the processor retries with progressively shorter chunks. If it persists, reduce `CHUNK_SIZE` in `.env`.
+Handled automatically — the processor retries with progressively shorter chunks. If it persists, reduce `CHUNK_SIZE` in `.env`.
 
 ### Qdrant data lost after restart
-Set `PERSIST_VECTORDB=true` in `.env`. The `./data` directory is volume-mounted in Docker, so data will survive restarts.
+Switch to Persist mode in the UI toggle, or set `PERSIST_VECTORDB=true` in `.env`. The `./data` directory is volume-mounted in Docker.
 
 ### Docker container management
 ```bash
-docker compose up -d           # start
-docker compose up --build -d   # rebuild and start
-docker compose restart         # restart without rebuild
-docker compose logs -f         # follow logs
-docker stop doc-analyzer-web-1 # stop specific container
+docker compose up -d            # start
+docker compose up --build -d    # rebuild and start
+docker compose restart          # restart without rebuild
+docker compose logs -f          # follow logs
+docker stop doc-analyzer-web-1  # stop the container
 ```
 
 ## Contributing

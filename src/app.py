@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from src.config.prompts import ROLE_PROMPTS
+from src.config.prompts import registry as prompt_registry
 from src.processors.factory import get_processor
 from src.processors.rag_processor import DEFAULT_COLLECTION, RAGProcessor
 from src.services.document_service import DocumentService
@@ -55,7 +55,7 @@ def status():
         },
         "models": _get_available_models(),
         "default_model": default_model,
-        "roles": list(ROLE_PROMPTS.keys()),
+        "roles": prompt_registry.as_api_list(),
     }
 
 
@@ -105,6 +105,15 @@ def create_collection(req: CollectionRequest):
 def delete_collection(name: str):
     document_service.delete_collection(name)
     return {"deleted": name, "collections": rag_processor.get_collections()}
+
+
+# ── Prompts ───────────────────────────────────────────────────────────────────
+
+@app.post("/api/prompts/reload")
+def reload_prompts():
+    """Re-scan src/prompts/ and return the updated role list. No restart needed."""
+    prompt_registry.reload()
+    return {"roles": prompt_registry.as_api_list()}
 
 
 # ── Upload ────────────────────────────────────────────────────────────────────
@@ -419,6 +428,9 @@ HTML_PAGE = r"""<!DOCTYPE html>
   </div>
   <div class="header-right">
     <select id="role"></select>
+    <button id="reloadPromptsBtn" onclick="reloadPrompts()" title="Reload prompts from disk"
+      style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);
+             padding:5px 8px;cursor:pointer;font-size:12px;">↻</button>
     <select id="model"></select>
   </div>
 </header>
@@ -519,7 +531,7 @@ async function init() {
   state.default_model = data.default_model;
 
   document.getElementById('role').innerHTML =
-    state.roles.map(r => `<option value="${r}">${r}</option>`).join('');
+    state.roles.map(r => `<option value="${r.key}">${r.name}</option>`).join('');
   document.getElementById('model').innerHTML =
     state.models.map(m =>
       `<option value="${m}"${m === state.default_model ? ' selected' : ''}>${m}</option>`
@@ -539,6 +551,23 @@ async function init() {
     renderMemoryFiles();
   }
   updateSendBtn();
+}
+
+// ── Prompts ───────────────────────────────────────────────────────────────────
+
+async function reloadPrompts() {
+  const btn = document.getElementById('reloadPromptsBtn');
+  btn.textContent = '…';
+  try {
+    const res = await fetch(API + '/api/prompts/reload', { method: 'POST' });
+    const data = await res.json();
+    state.roles = data.roles;
+    const current = document.getElementById('role').value;
+    document.getElementById('role').innerHTML =
+      state.roles.map(r => `<option value="${r.key}"${r.key === current ? ' selected' : ''}>${r.name}</option>`).join('');
+    btn.textContent = '✓';
+  } catch { btn.textContent = '!'; }
+  setTimeout(() => { btn.textContent = '↻'; }, 1500);
 }
 
 // ── Mode ─────────────────────────────────────────────────────────────────────
