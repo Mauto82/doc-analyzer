@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.4.0] - 2026-03-31
+
+Introdotta la gestione multi-collection con toggle Memory/Persist direttamente dall'interfaccia. In modalità Persist le collection vengono salvate su disco e sopravvivono ai restart; in modalità Memory tutto è in-memory e volatile.
+
+### Cambiamenti principali
+
+#### Storage mode: Memory vs Persist (da UI)
+- **Toggle Memory/Persist** nell'header — nessuna modifica a `.env` necessaria
+- **Memory mode**: Qdrant in-memory (`:memory:`), comportamento identico alle versioni precedenti; tutti i dati vengono persi al restart
+- **Persist mode**: Qdrant file-based su `QDRANT_DB_PATH`; i dati sopravvivono ai restart del container
+- Al passaggio a Persist, il `files_map` viene ricostruito automaticamente dai payload Qdrant (`rebuild_files_map()`)
+
+#### Gestione multi-collection
+- **Creazione collection** dalla sidebar con form inline
+- **Eliminazione collection** con conferma (rimuove anche tutti i documenti indicizzati)
+- **Collection attiva** per l'upload: click sul nome per selezionarla come target
+- **Checkbox per la query**: ogni collection ha un checkbox — la query viene eseguita solo sulle collection selezionate
+- I risultati di più collection vengono uniti e riordinati per score (cosine), mantenendo i top 4 globali
+- **Memory mode**: un'unica collection implicita `default`, sidebar semplificata
+
+#### Nuovi endpoint API
+
+| Metodo | Path | Descrizione |
+|--------|------|-------------|
+| `POST` | `/api/mode` | Switcha tra `memory` e `persist` |
+| `GET` | `/api/collections` | Lista delle collection esistenti |
+| `POST` | `/api/collections` | Crea una nuova collection |
+| `DELETE` | `/api/collections/{name}` | Elimina una collection e i suoi documenti |
+| `DELETE` | `/api/collections/{col}/files/{file}` | Rimuove un file da una collection specifica |
+
+#### Endpoint modificati
+- `POST /api/upload` — accetta il campo form `collection` (default: `"default"`)
+- `POST /api/query` e `/api/query/stream` — accettano `collections: List[str]`; se vuota, usa tutte le collection caricate
+- `GET /api/status` — restituisce `mode`, `collections`, `files_map` (al posto di `files`)
+
+### File modificati
+- `src/processors/rag_processor.py` — rimossa collection hardcoded, aggiunti `set_mode()`, `create_collection()`, `delete_collection()`, `get_collections()`, `rebuild_files_map()`; `query`/`query_stream` ora accettano lista di collection
+- `src/app.py` — `processed_files_map` ora `{collection: {file: [ids]}}`, nuovi endpoint, frontend con toggle e sidebar collections
+- `tests/unit/test_rag_processor.py` — aggiornati per nuova API; aggiunti test multi-collection, set_mode, create/delete collection
+- `tests/unit/test_app.py` — aggiornati per nuovo schema `files_map`
+- `tests/unit/test_app_remove_file.py` — aggiornati per nuovi endpoint `/api/collections/{col}/files/{file}`
+
+---
+
 ## [0.3.0] - 2026-03-31
 
 Interfaccia completamente riscritta: rimosso Gradio, sostituito con frontend HTML/JS puro su FastAPI. Aggiunti OCR per PDF vettoriali/scansionati, streaming delle risposte LLM, e vari fix di stabilità.

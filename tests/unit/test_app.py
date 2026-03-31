@@ -1,8 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
-import os
-import io
 
 
 @pytest.fixture(autouse=True)
@@ -42,9 +40,11 @@ def test_status(client):
     res = client.get("/api/status")
     assert res.status_code == 200
     data = res.json()
-    assert "files" in data
+    assert "files_map" in data
     assert "models" in data
     assert "roles" in data
+    assert "mode" in data
+    assert "collections" in data
 
 
 def test_query_empty_question(client):
