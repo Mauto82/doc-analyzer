@@ -58,7 +58,7 @@ doc-analyzer/
 │   ├── processors/
 │   └── unit/
 ├── data/
-│   └── qdrant/                         # Qdrant file storage (PERSIST_VECTORDB=true)
+│   └── qdrant/                         # Qdrant file storage (persist mode)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── docker-compose.test.yml
@@ -122,7 +122,6 @@ OLLAMA_PORT=11434
 
 # Vector store
 QDRANT_DB_PATH=./data/qdrant
-PERSIST_VECTORDB=false      # set to 'true' to keep data between restarts
 
 # Chunking
 CHUNK_SIZE=1000
@@ -131,7 +130,7 @@ CHUNK_OVERLAP=200
 
 > **Docker note:** `docker-compose.yml` automatically overrides `OLLAMA_HOST` to `host.docker.internal` so the container can reach Ollama on the host machine.
 
-> **Qdrant persistence:** With `PERSIST_VECTORDB=false` (default), the vector store is in-memory and resets on every restart. Set to `true` to persist data in `./data/qdrant` (volume-mounted in Docker). You can also switch modes at runtime from the UI toggle without editing `.env`.
+> **Qdrant persistence:** The storage mode (memory vs persist) is controlled from the UI toggle in the header. In persist mode, data is saved to `QDRANT_DB_PATH` and survives restarts. The `./data` directory is volume-mounted in Docker.
 
 ## API Endpoints
 
@@ -262,7 +261,7 @@ pip install pytesseract Pillow
 Handled automatically — the processor retries with progressively shorter chunks. If it persists, reduce `CHUNK_SIZE` in `.env`.
 
 ### Qdrant data lost after restart
-Switch to Persist mode in the UI toggle, or set `PERSIST_VECTORDB=true` in `.env`. The `./data` directory is volume-mounted in Docker.
+Switch to Persist mode using the toggle in the UI header. The `./data` directory is volume-mounted in Docker.
 
 ### Docker container management
 ```bash
