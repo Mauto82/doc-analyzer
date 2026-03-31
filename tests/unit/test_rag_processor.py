@@ -5,41 +5,32 @@ from src.models.document import Document
 
 
 @pytest.fixture
-def rag_processor(monkeypatch):
-    monkeypatch.setenv('OLLAMA_HOST', 'localhost')
-    monkeypatch.setenv('OLLAMA_PORT', '11434')
-    monkeypatch.setenv('LLM_MODEL', 'test-model')
-    monkeypatch.setenv('EMBEDDING_MODEL', 'test-embed-model')
+def rag_processor():
+    mock_ollama = MagicMock()
 
-    with patch('src.processors.rag_processor.ollama.Client') as mock_ollama, \
-         patch('src.processors.rag_processor.QdrantClient') as mock_qdrant:
+    embed_response = MagicMock()
+    embed_response.embeddings = [[0.1] * 1024]
+    mock_ollama.embed.return_value = embed_response
 
-        mock_client = MagicMock()
-        mock_ollama.return_value = mock_client
+    mock_stream_chunk = MagicMock()
+    mock_stream_chunk.message.content = "Test response"
+    mock_ollama.chat.return_value = iter([mock_stream_chunk])
 
-        embed_response = MagicMock()
-        embed_response.embeddings = [[0.1] * 1024]
-        mock_client.embed.return_value = embed_response
+    model = MagicMock()
+    model.model = "test-model"
+    mock_ollama.list.return_value = MagicMock(models=[model])
 
-        # Streaming chat: each item has .message.content
-        mock_chunk = MagicMock()
-        mock_chunk.message.content = "Test response"
-        mock_client.chat.return_value = iter([mock_chunk])
+    mock_qdrant = MagicMock()
+    mock_qdrant.get_collections.return_value = MagicMock(collections=[])
 
-        model = MagicMock()
-        model.model = "test-model"
-        list_response = MagicMock()
-        list_response.models = [model]
-        mock_client.list.return_value = list_response
-
-        mock_qclient = MagicMock()
-        mock_qdrant.return_value = mock_qclient
-        collections_response = MagicMock()
-        collections_response.collections = []
-        mock_qclient.get_collections.return_value = collections_response
-
-        processor = RAGProcessor()
-        yield processor
+    processor = RAGProcessor(
+        ollama_client=mock_ollama,
+        qdrant_client=mock_qdrant,
+        model_name="test-model",
+        embedding_model="test-embed-model",
+        qdrant_path="./data/test",
+    )
+    yield processor
 
 
 @pytest.fixture
@@ -60,11 +51,9 @@ def test_init(rag_processor):
 
 
 def test_missing_model_env(monkeypatch):
-    monkeypatch.delenv('LLM_MODEL', raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
     with pytest.raises(ValueError, match="LLM_MODEL environment variable is not set"):
-        with patch('src.processors.rag_processor.ollama.Client'), \
-             patch('src.processors.rag_processor.QdrantClient'):
-            RAGProcessor()
+        RAGProcessor.from_env()
 
 
 def test_add_document_no_chunks(rag_processor):
@@ -178,14 +167,14 @@ def test_query_multi_collection(rag_processor):
     assert rag_processor.qdrant.query_points.call_count == 2
 
 
-def test_set_mode_persist(rag_processor, monkeypatch, tmp_path):
-    monkeypatch.setattr(rag_processor, 'qdrant_path', str(tmp_path / 'qdrant'))
-    with patch('src.processors.rag_processor.QdrantClient') as mock_qdrant:
+def test_set_mode_persist(rag_processor, tmp_path):
+    rag_processor.qdrant_path = str(tmp_path / "qdrant")
+    with patch("src.processors.rag_processor.QdrantClient") as mock_qdrant:
         mock_qclient = MagicMock()
         mock_qdrant.return_value = mock_qclient
         mock_qclient.get_collections.return_value = MagicMock(collections=[])
-        rag_processor.set_mode('persist')
-        assert rag_processor.mode == 'persist'
+        rag_processor.set_mode("persist")
+        assert rag_processor.mode == "persist"
 
 
 def test_set_mode_invalid(rag_processor):

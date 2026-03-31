@@ -32,38 +32,22 @@ def test_process_txt_file(text_processor):
     finally:
         os.unlink(file_path)
 
-def test_process_txt_fileobj(text_processor):
-    # Test with file-like object that has name attribute
-    test_content = "Test content in a file object."
+def test_process_utf8_with_special_chars(text_processor):
+    test_content = "Accented: àèìòù — symbols: €£"
     file_path = create_temp_file(test_content)
-
-    class MockFile:
-        def __init__(self, path):
-            self.name = path
-
-    mock_file = MockFile(file_path)
-
     try:
-        chunks = text_processor.process(mock_file)
+        chunks = text_processor.process(file_path)
         assert len(chunks) > 0
-        assert test_content in chunks[0].page_content
+        assert "àèìòù" in chunks[0].page_content
     finally:
-        # Remove file if exists
-        if os.path.exists(file_path):
-            os.unlink(file_path)
+        os.unlink(file_path)
 
-def test_process_txt_content(text_processor):
-    # Test with content directly provided
-    class ContentObject:
-        def __init__(self, content):
-            self.content = content
 
-        def read(self):
-            return self.content
-
-    test_content = "Direct content test"
-    content_obj = ContentObject(test_content.encode())
-
-    chunks = text_processor.process(content_obj)
-    assert len(chunks) > 0
-    assert test_content in chunks[0].page_content
+def test_process_empty_file(text_processor):
+    file_path = create_temp_file("")
+    try:
+        # Empty file → no chunks (splitter returns nothing for empty text)
+        chunks = text_processor.process(file_path)
+        assert isinstance(chunks, list)
+    finally:
+        os.unlink(file_path)

@@ -5,30 +5,23 @@ from src.models.document import Document
 
 
 @pytest.fixture
-def rag_processor(monkeypatch):
-    monkeypatch.setenv('OLLAMA_HOST', 'localhost')
-    monkeypatch.setenv('OLLAMA_PORT', '11434')
-    monkeypatch.setenv('LLM_MODEL', 'test-model')
-    monkeypatch.setenv('EMBEDDING_MODEL', 'test-embed-model')
+def rag_processor():
+    mock_ollama = MagicMock()
+    embed_response = MagicMock()
+    embed_response.embeddings = [[0.1] * 1024]
+    mock_ollama.embed.return_value = embed_response
 
-    with patch('src.processors.rag_processor.ollama.Client') as mock_ollama, \
-         patch('src.processors.rag_processor.QdrantClient') as mock_qdrant:
+    mock_qdrant = MagicMock()
+    mock_qdrant.get_collections.return_value = MagicMock(collections=[])
 
-        mock_client = MagicMock()
-        mock_ollama.return_value = mock_client
-
-        embed_response = MagicMock()
-        embed_response.embeddings = [[0.1] * 1024] * 3
-        mock_client.embed.return_value = embed_response
-
-        mock_qclient = MagicMock()
-        mock_qdrant.return_value = mock_qclient
-        collections_response = MagicMock()
-        collections_response.collections = []
-        mock_qclient.get_collections.return_value = collections_response
-
-        processor = RAGProcessor()
-        yield processor
+    processor = RAGProcessor(
+        ollama_client=mock_ollama,
+        qdrant_client=mock_qdrant,
+        model_name="test-model",
+        embedding_model="test-embed-model",
+        qdrant_path="./data/test",
+    )
+    yield processor
 
 
 @pytest.fixture

@@ -2,17 +2,22 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import json
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+import os
+import tempfile
+from typing import List, Optional
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
-from typing import List, Optional
-import os
-import tempfile
-from src.processors.factory import ProcessorFactory
-from src.processors.rag_processor import RAGProcessor, DEFAULT_COLLECTION
-from src.config.prompts import ROLE_PROMPTS
 
+from src.config.prompts import ROLE_PROMPTS
+from src.processors.factory import get_processor
+from src.processors.rag_processor import DEFAULT_COLLECTION, RAGProcessor
+from src.services.document_service import DocumentService
+
+
+# ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="DocAnalyzer")
 app.add_middleware(
@@ -23,31 +28,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-rag_processor = RAGProcessor()
+rag_processor = RAGProcessor.from_env()
+document_service = DocumentService(rag_processor)
 
-# {collection_name: {file_name: [chunk_ids]}}
-processed_files_map: dict[str, dict[str, list[str]]] = {}
-
-available_models = rag_processor.get_available_models()
 default_model = os.getenv("LLM_MODEL")
-if default_model not in available_models:
-    available_models.insert(0, default_model)
-else:
-    available_models.remove(default_model)
-    available_models.insert(0, default_model)
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
-
-def _all_files_flat() -> list[str]:
-    files = []
-    for col_files in processed_files_map.values():
-        files.extend(col_files.keys())
-    return files
-
-
-def _has_any_files() -> bool:
-    return any(bool(files) for files in processed_files_map.values())
+def _get_available_models() -> List[str]:
+    """Fetch models from Ollama and ensure the default model is first."""
+    models = rag_processor.get_available_models()
+    if default_model in models:
+        models.remove(default_model)
+    return [default_model, *models] if default_model else models
 
 
 # ── Status ────────────────────────────────────────────────────────────────────
@@ -57,8 +49,11 @@ def status():
     return {
         "mode": rag_processor.mode,
         "collections": rag_processor.get_collections(),
-        "files_map": {col: list(files.keys()) for col, files in processed_files_map.items()},
-        "models": available_models,
+        "files_map": {
+            col: list(files.keys())
+            for col, files in document_service.files_map.items()
+        },
+        "models": _get_available_models(),
         "default_model": default_model,
         "roles": list(ROLE_PROMPTS.keys()),
     }
@@ -72,21 +67,17 @@ class StorageModeRequest(BaseModel):
 
 @app.post("/api/mode")
 def set_mode(req: StorageModeRequest):
-    global processed_files_map
     try:
-        rag_processor.set_mode(req.mode)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-
-    if req.mode == "persist":
-        processed_files_map = rag_processor.rebuild_files_map()
-    else:
-        processed_files_map = {}
-
+        document_service.switch_mode(req.mode)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     return {
         "mode": rag_processor.mode,
         "collections": rag_processor.get_collections(),
-        "files_map": {col: list(files.keys()) for col, files in processed_files_map.items()},
+        "files_map": {
+            col: list(files.keys())
+            for col, files in document_service.files_map.items()
+        },
     }
 
 
@@ -106,59 +97,51 @@ def create_collection(req: CollectionRequest):
     name = req.name.strip()
     if not name:
         raise HTTPException(400, "Collection name cannot be empty")
-    rag_processor.create_collection(name)
-    if name not in processed_files_map:
-        processed_files_map[name] = {}
+    document_service.create_collection(name)
     return {"created": name, "collections": rag_processor.get_collections()}
 
 
 @app.delete("/api/collections/{name}")
 def delete_collection(name: str):
-    rag_processor.delete_collection(name)
-    if name in processed_files_map:
-        del processed_files_map[name]
+    document_service.delete_collection(name)
     return {"deleted": name, "collections": rag_processor.get_collections()}
 
 
 # ── Upload ────────────────────────────────────────────────────────────────────
 
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...), collection: str = Form(DEFAULT_COLLECTION)):
+async def upload_file(
+    file: UploadFile = File(...),
+    collection: str = Form(DEFAULT_COLLECTION),
+):
     name = file.filename
-    col_files = processed_files_map.get(collection, {})
-    if name in col_files:
+    if document_service.is_duplicate(name, collection):
         raise HTTPException(400, f"'{name}' is already in collection '{collection}'")
 
     suffix = os.path.splitext(name)[1]
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     try:
-        content = await file.read()
-        tmp.write(content)
+        tmp.write(await file.read())
         tmp.close()
 
-        processor = ProcessorFactory.get_processor(tmp.name)
+        processor = get_processor(tmp.name)
         chunks = processor.process(tmp.name)
 
         if not chunks:
             raise HTTPException(422, f"No content extracted from '{name}'")
 
-        # Attach original file name to each chunk's metadata for rebuild
         for chunk in chunks:
             chunk.metadata["file_name"] = name
 
-        ids = rag_processor.add_document(chunks, collection_name=collection)
+        n_chunks = document_service.add_file(name, chunks, collection)
+        return {"file": name, "chunks": n_chunks, "collection": collection}
 
-        if collection not in processed_files_map:
-            processed_files_map[collection] = {}
-        processed_files_map[collection][name] = ids
-
-        return {"file": name, "chunks": len(chunks), "collection": collection}
     except HTTPException:
         raise
-    except ValueError as e:
-        raise HTTPException(422, str(e))
-    except Exception as e:
-        raise HTTPException(500, f"Error processing '{name}': {e}")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except Exception as exc:
+        raise HTTPException(500, f"Error processing '{name}': {exc}")
     finally:
         if os.path.exists(tmp.name):
             os.unlink(tmp.name)
@@ -168,28 +151,17 @@ async def upload_file(file: UploadFile = File(...), collection: str = Form(DEFAU
 
 @app.delete("/api/collections/{collection}/files/{file_name}")
 def remove_file(collection: str, file_name: str):
-    if collection not in processed_files_map or file_name not in processed_files_map[collection]:
+    ok = document_service.remove_file(file_name, collection)
+    if not ok:
         raise HTTPException(404, f"'{file_name}' not found in collection '{collection}'")
-    ids = processed_files_map[collection][file_name]
-    ok = rag_processor.remove_document(ids, collection_name=collection)
-    if ok:
-        del processed_files_map[collection][file_name]
-        return {"removed": file_name, "collection": collection}
-    raise HTTPException(500, f"Failed to remove '{file_name}'")
+    return {"removed": file_name, "collection": collection}
 
 
 # ── Clear all ─────────────────────────────────────────────────────────────────
 
 @app.delete("/api/files")
 def clear_all():
-    global processed_files_map
-    if rag_processor.mode == "persist":
-        for col in list(processed_files_map.keys()):
-            rag_processor.delete_collection(col)
-    else:
-        from qdrant_client import QdrantClient
-        rag_processor.qdrant = QdrantClient(":memory:")
-    processed_files_map = {}
+    document_service.clear_all()
     return {"cleared": True}
 
 
@@ -202,46 +174,41 @@ class QueryRequest(BaseModel):
     collections: List[str] = []
 
 
-def _resolve_collections(req_collections: List[str]) -> List[str]:
-    """Return the collections to query: explicit list or all loaded collections."""
-    if req_collections:
-        return req_collections
-    return list(processed_files_map.keys())
-
-
 @app.post("/api/query")
 def query(req: QueryRequest):
     if not req.question.strip():
         raise HTTPException(400, "Empty question")
-    if not _has_any_files():
+    if not document_service.has_documents():
         raise HTTPException(400, "No documents in context")
     try:
-        cols = _resolve_collections(req.collections)
+        cols = document_service.resolve_query_collections(req.collections)
         answer = rag_processor.query(req.question.strip(), cols, req.role, req.model)
         return {"answer": answer}
-    except ValueError as e:
-        raise HTTPException(422, str(e))
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
 
 
 @app.post("/api/query/stream")
 def query_stream(req: QueryRequest):
     if not req.question.strip():
         raise HTTPException(400, "Empty question")
-    if not _has_any_files():
+    if not document_service.has_documents():
         raise HTTPException(400, "No documents in context")
 
-    cols = _resolve_collections(req.collections)
+    cols = document_service.resolve_query_collections(req.collections)
 
     def generate():
         try:
-            for chunk in rag_processor.query_stream(req.question.strip(), cols, req.role, req.model):
+            for chunk in rag_processor.query_stream(
+                req.question.strip(), cols, req.role, req.model
+            ):
                 yield f"data: {json.dumps({'text': chunk})}\n\n"
-        except ValueError as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        except ValueError as exc:
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -258,7 +225,7 @@ def index():
     return HTML_PAGE
 
 
-HTML_PAGE = """<!DOCTYPE html>
+HTML_PAGE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">

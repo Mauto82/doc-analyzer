@@ -1,5 +1,6 @@
-from typing import Union
 from pathlib import Path
+from typing import Union
+
 from .base.document_processor import DocumentProcessor
 from .pdf_processor import PDFProcessor
 from .word_processor import WordProcessor
@@ -8,42 +9,63 @@ from .rtf_processor import RtfProcessor
 from .code_processor import CodeProcessor
 from .table_processor import TableProcessor
 
+# ── Registry ──────────────────────────────────────────────────────────────────
+# Extension → processor class mapping. Adding a new processor = one new line.
+# OCP: open for extension (add entry), closed for modification (no if/elif).
+
+_PROCESSOR_MAP: dict[str, type[DocumentProcessor]] = {
+    ".pdf":  PDFProcessor,
+    ".doc":  WordProcessor,
+    ".docx": WordProcessor,
+    ".txt":  TextProcessor,
+    ".rtf":  RtfProcessor,
+    ".xlsx": TableProcessor,
+    ".xls":  TableProcessor,
+    ".csv":  TableProcessor,
+    ".ods":  TableProcessor,
+    ".json": TableProcessor,
+}
+
+_UNSUPPORTED_MESSAGE = (
+    "Please upload a supported file type: PDF, DOC, DOCX, TXT, RTF, "
+    "Excel, CSV, ODS, JSON, Dockerfile, Markdown, YAML, or code file "
+    "(e.g., .py, .js, .java, etc.)"
+)
+
+
+def get_processor(file_path: Union[str, Path]) -> DocumentProcessor:
+    """
+    Return the appropriate DocumentProcessor for the given file path.
+
+    Lookup order:
+    1. Exact extension match in the registry
+    2. CodeProcessor fallback (handles 40+ languages + Dockerfiles without extension)
+
+    Raises:
+        ValueError: if no processor supports the file type.
+    """
+    path = Path(file_path) if isinstance(file_path, str) else file_path
+    # Handle file-like objects that expose a .name attribute
+    if hasattr(path, "name"):
+        path = Path(path.name)
+
+    ext = path.suffix.lower()
+
+    processor_cls = _PROCESSOR_MAP.get(ext)
+    if processor_cls:
+        return processor_cls()
+
+    if CodeProcessor.is_code_file(path):
+        return CodeProcessor()
+
+    raise ValueError(_UNSUPPORTED_MESSAGE)
+
+
+# ── Backward-compatible facade ────────────────────────────────────────────────
+
 class ProcessorFactory:
-    """Factory class for creating document processors"""
+    """Thin facade kept for backward compatibility. Prefer get_processor()."""
 
     @staticmethod
     def get_processor(file_path: Union[str, Path]) -> DocumentProcessor:
-        """
-        Get appropriate processor based on file extension
-
-        Args:
-        file_path: Path to the file
-
-        Returns:
-        DocumentProcessor: Appropriate processor for the file type
-
-        Raises:
-        ValueError: If file type is not supported
-        """
-        if isinstance(file_path, str):
-            file_path = Path(file_path)
-
-        if hasattr(file_path, 'name'):
-            extension = Path(file_path.name).suffix.lower()
-        else:
-            extension = file_path.suffix.lower()
-
-        if extension == '.pdf':
-            return PDFProcessor()
-        elif extension in ['.doc', '.docx']:
-            return WordProcessor()
-        elif extension == '.txt':
-            return TextProcessor()
-        elif extension == '.rtf':
-            return RtfProcessor()
-        elif TableProcessor.is_table_file(file_path):
-            return TableProcessor()
-        elif CodeProcessor.is_code_file(file_path):
-            return CodeProcessor()
-
-        raise ValueError("Please upload a supported file type: PDF, DOC, DOCX, TXT, RTF, Excel, CSV, ODS, JSON, Dockerfile, Markdown, YAML, or code file (e.g., .py, .js, .java, etc.)")
+        return get_processor(file_path)
