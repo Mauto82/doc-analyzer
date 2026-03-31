@@ -409,6 +409,27 @@ HTML_PAGE = """<!DOCTYPE html>
             animation: blink .8s step-end infinite; }
   @keyframes blink { 50% { opacity: 0; } }
 
+  /* ── Markdown rendering ── */
+  .msg.bot h1, .msg.bot h2, .msg.bot h3 { font-weight: 700; margin: 10px 0 4px; line-height: 1.3; }
+  .msg.bot h1 { font-size: 1.15em; }
+  .msg.bot h2 { font-size: 1.05em; }
+  .msg.bot h3 { font-size: 0.97em; }
+  .msg.bot p { margin: 0 0 8px; }
+  .msg.bot p:last-child { margin-bottom: 0; }
+  .msg.bot ul, .msg.bot ol { margin: 4px 0 8px 18px; padding: 0; }
+  .msg.bot li { margin-bottom: 3px; }
+  .msg.bot strong { font-weight: 700; }
+  .msg.bot em { font-style: italic; }
+  .msg.bot code { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.88em;
+                  background: #0d0d10; border: 1px solid var(--border);
+                  border-radius: 4px; padding: 1px 5px; }
+  .msg.bot pre { background: #0d0d10; border: 1px solid var(--border); border-radius: 8px;
+                 padding: 12px 14px; overflow-x: auto; margin: 6px 0 10px; }
+  .msg.bot pre code { background: none; border: none; padding: 0; font-size: 0.85em; line-height: 1.55; }
+  .msg.bot blockquote { border-left: 3px solid var(--accent); padding-left: 10px;
+                        color: var(--muted); margin: 6px 0; }
+  .msg.bot hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+
   @media (max-width: 700px) {
     .app { flex-direction: column; }
     .sidebar { width: 100%; max-height: 220px; border-right: none;
@@ -789,9 +810,8 @@ async function sendQuery() {
   const messagesEl = document.getElementById('messages');
   document.getElementById('sendBtn').disabled = true;
 
-  const cursor = document.createElement('span');
-  cursor.className = 'cursor';
-  msgEl.appendChild(cursor);
+  // Show blinking cursor while waiting for first token
+  msgEl.innerHTML = '<span class="cursor"></span>';
 
   let fullText = '';
   let firstChunk = true;
@@ -831,24 +851,121 @@ async function sendQuery() {
         try { parsed = JSON.parse(payload); } catch { continue; }
         if (parsed.error) throw new Error(parsed.error);
         if (parsed.text) {
-          if (firstChunk) { cursor.remove(); firstChunk = false; }
+          firstChunk = false;
           fullText += parsed.text;
-          msgEl.textContent = fullText;
+          // Render markdown progressively, keep cursor at end while streaming
+          msgEl.innerHTML = renderMarkdown(fullText) + '<span class="cursor"></span>';
           messagesEl.scrollTop = messagesEl.scrollHeight;
         }
       }
     }
 
-    if (firstChunk) { cursor.remove(); msgEl.textContent = '(no response)'; }
+    // Final render without cursor
+    if (firstChunk) {
+      msgEl.textContent = '(no response)';
+    } else {
+      msgEl.innerHTML = renderMarkdown(fullText);
+    }
 
   } catch (err) {
-    cursor.remove();
     msgEl.className = 'msg error';
     msgEl.textContent = err.message;
   } finally {
     updateSendBtn();
     input.focus();
   }
+}
+
+// ── Markdown renderer ────────────────────────────────────────────────────────
+
+function renderMarkdown(text) {
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function inline(s) {
+    // inline code first (protect from bold/italic processing)
+    s = s.replace(/`([^`]+)`/g, (_, c) => `<code>${esc(c)}</code>`);
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
+    s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    s = s.replace(/_(.+?)_/g, '<em>$1</em>');
+    return s;
+  }
+
+  const lines = text.split('\\n');
+  const out = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code block
+    if (line.startsWith('```')) {
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith('```')) {
+        codeLines.push(esc(lines[i]));
+        i++;
+      }
+      out.push(`<pre><code>${codeLines.join('\\n')}</code></pre>`);
+      i++;
+      continue;
+    }
+
+    // Headings
+    let m;
+    if ((m = line.match(/^(#{1,3}) (.+)/))) {
+      const lvl = m[1].length;
+      out.push(`<h${lvl}>${inline(esc(m[2]))}</h${lvl}>`);
+      i++; continue;
+    }
+
+    // Horizontal rule
+    if (/^[-*_]{3,}$/.test(line.trim())) {
+      out.push('<hr>'); i++; continue;
+    }
+
+    // Blockquote
+    if (line.startsWith('> ')) {
+      const bqLines = [];
+      while (i < lines.length && lines[i].startsWith('> ')) {
+        bqLines.push(inline(esc(lines[i].slice(2))));
+        i++;
+      }
+      out.push(`<blockquote>${bqLines.join('<br>')}</blockquote>`);
+      continue;
+    }
+
+    // Unordered list
+    if (/^[-*+] /.test(line)) {
+      const items = [];
+      while (i < lines.length && /^[-*+] /.test(lines[i])) {
+        items.push(`<li>${inline(esc(lines[i].replace(/^[-*+] /, '')))}</li>`);
+        i++;
+      }
+      out.push(`<ul>${items.join('')}</ul>`);
+      continue;
+    }
+
+    // Ordered list
+    if (/^\d+[.)]\s/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\d+[.)]\s/.test(lines[i])) {
+        items.push(`<li>${inline(esc(lines[i].replace(/^\d+[.)]\s/, '')))}</li>`);
+        i++;
+      }
+      out.push(`<ol>${items.join('')}</ol>`);
+      continue;
+    }
+
+    // Empty line
+    if (line.trim() === '') { i++; continue; }
+
+    // Paragraph
+    out.push(`<p>${inline(esc(line))}</p>`);
+    i++;
+  }
+  return out.join('');
 }
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
