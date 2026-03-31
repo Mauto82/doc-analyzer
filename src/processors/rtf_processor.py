@@ -1,9 +1,12 @@
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from src.models.document import Document
+from src.utils.text_splitter import RecursiveCharacterTextSplitter
 from .base.document_processor import DocumentProcessor
 import tempfile
 import os
-import textract
+try:
+    import textract
+except ImportError:
+    textract = None
 
 class RtfProcessor(DocumentProcessor):
     """RTF (Rich Text Format) file processor implementation"""
@@ -36,7 +39,8 @@ class RtfProcessor(DocumentProcessor):
                     file_path = tmp_file.name
 
         try:
-            # Extract text using textract
+            if textract is None:
+                raise ImportError("textract is required to process .rtf files. Install it with: pip install textract")
             text = textract.process(file_path).decode('utf-8')
 
             # Create a single document with the extracted text

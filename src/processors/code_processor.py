@@ -1,5 +1,5 @@
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from src.models.document import Document
+from src.utils.text_splitter import RecursiveCharacterTextSplitter
 from .base.document_processor import DocumentProcessor
 import tempfile
 import os
@@ -176,7 +176,6 @@ Handles code files like .py, .js, .java, .c, .cpp, .php, etc.
 
         return extension_to_language.get(extension, 'unknown')
 
-    @classmethod
     @classmethod
     def is_code_file(cls, file_path):
         """

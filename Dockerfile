@@ -13,7 +13,7 @@ WORKDIR /app
 
 # Create data directory with correct permissions
 RUN mkdir -p /app/data && chmod 777 /app/data
-RUN mkdir -p /app/data/chroma && chmod 777 /app/data/chroma
+RUN mkdir -p /app/data/qdrant && chmod 777 /app/data/qdrant
 
 # Copy requirements and setup files
 COPY requirements.txt requirements-dev.txt setup.py ./
@@ -30,9 +30,9 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # Environment variables
 ENV OLLAMA_HOST=${OLLAMA_HOST}
 ENV OLLAMA_PORT=${OLLAMA_PORT}
-ENV PYTHONPATH=/app/src
+ENV PYTHONPATH=/app
 
 EXPOSE 8000
 
 # Default command
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000"]

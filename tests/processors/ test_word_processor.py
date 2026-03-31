@@ -1,6 +1,6 @@
 import pytest
 from src.processors.word_processor import WordProcessor
-from langchain.schema import Document
+from src.models.document import Document
 import os
 import tempfile
 from unittest.mock import patch, Mock

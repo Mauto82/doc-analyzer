@@ -1,6 +1,6 @@
 import pytest
 from src.processors.table_processor import TableProcessor
-from langchain.schema import Document
+from src.models.document import Document
 import os
 import tempfile
 import pandas as pd

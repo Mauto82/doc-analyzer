@@ -1,6 +1,6 @@
 import pytest
 from src.processors.code_processor import CodeProcessor
-from langchain.schema import Document
+from src.models.document import Document
 import os
 import tempfile
 import shutil

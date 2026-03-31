@@ -5,8 +5,10 @@ __pycache__/
 .env
 .venv
 .ropeproject
+.pytest_cache/
 env/
 venv/
 ENV/
 data/
 .DS_Store
+/Users/Mauto82/Progetti/virtual-agent/data/init.sql

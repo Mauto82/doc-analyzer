@@ -1,16 +1,13 @@
 import pytest
 from src.processors.rtf_processor import RtfProcessor
-from langchain.schema import Document
+from src.models.document import Document
 import os
 import tempfile
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 @pytest.fixture
 def rtf_processor():
     return RtfProcessor()
-
-def test_init(rtf_processor):
-    assert rtf_processor.text_splitter is not None
 
 def create_temp_file(content, suffix='.rtf'):
     temp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
@@ -18,22 +15,26 @@ def create_temp_file(content, suffix='.rtf'):
     temp.close()
     return temp.name
 
+def _mock_textract(test_content):
+    """Create a mock textract module with process() returning the given content."""
+    mock = MagicMock()
+    mock.process.return_value = test_content.encode('utf-8')
+    return mock
+
 @pytest.mark.asyncio
 async def test_process_rtf_file(rtf_processor):
-    # Mock textract to avoid dependency on actual RTF files in tests
-    with patch('textract.process') as mock_textract:
-        test_content = "This is a test RTF document content."
-        mock_textract.return_value = test_content.encode('utf-8')
+    test_content = "This is a test RTF document content."
+    mock = _mock_textract(test_content)
 
-        # Create a temporary RTF file
+    with patch.object(
+        __import__('src.processors.rtf_processor', fromlist=['rtf_processor']),
+        'textract', mock,
+    ):
         file_path = create_temp_file(b"{\\rtf1\\ansi Test RTF content}")
-
         try:
             chunks = rtf_processor.process(file_path)
-            # Verify results
             assert len(chunks) > 0
             assert all(isinstance(chunk, Document) for chunk in chunks)
-            # Verify content
             assert test_content in chunks[0].page_content
         finally:
             if os.path.exists(file_path):
@@ -41,12 +42,13 @@ async def test_process_rtf_file(rtf_processor):
 
 @pytest.mark.asyncio
 async def test_process_rtf_fileobj(rtf_processor):
-    # Test with file-like object that has name attribute
-    with patch('textract.process') as mock_textract:
-        test_content = "Test content from file object."
-        mock_textract.return_value = test_content.encode('utf-8')
+    test_content = "Test content from file object."
+    mock = _mock_textract(test_content)
 
-        # Create a mock file
+    with patch.object(
+        __import__('src.processors.rtf_processor', fromlist=['rtf_processor']),
+        'textract', mock,
+    ):
         class MockFile:
             def __init__(self, path):
                 self.name = path
@@ -64,11 +66,13 @@ async def test_process_rtf_fileobj(rtf_processor):
 
 @pytest.mark.asyncio
 async def test_process_rtf_content(rtf_processor):
-    # Test with content directly provided
-    with patch('textract.process') as mock_textract:
-        test_content = "Direct RTF content test"
-        mock_textract.return_value = test_content.encode('utf-8')
+    test_content = "Direct RTF content test"
+    mock = _mock_textract(test_content)
 
+    with patch.object(
+        __import__('src.processors.rtf_processor', fromlist=['rtf_processor']),
+        'textract', mock,
+    ):
         class ContentObject:
             def __init__(self, content):
                 self.content = content

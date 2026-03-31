@@ -1,6 +1,5 @@
-# src/processors/text_processor.py
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from src.models.document import Document
+from src.utils.text_splitter import RecursiveCharacterTextSplitter
 from .base.document_processor import DocumentProcessor
 import tempfile
 import os

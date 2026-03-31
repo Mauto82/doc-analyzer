@@ -1,318 +1,250 @@
 # Doc Analyzer
 
-A web application that analyzes PDF, DOC, DOCX, TXT, RTF, code files, and more using large language models through Ollama and RAG (Retrieval-Augmented Generation) architecture.
+A web application that analyzes documents and code files using local large language models via Ollama and RAG (Retrieval-Augmented Generation). No cloud, no API keys — everything runs on your machine.
 
 ## Overview
 
-Doc Analyzer enables users to:
-- Upload various document types (PDF, DOC, DOCX, TXT, RTF)
-- Analyze code files (Python, JavaScript, Java, and many others)
-- Process Markdown (.md) and YAML (.yaml/.yml) files
-- Analyze Dockerfiles (renamed with an extension like .txt)
-- Add multiple documents to the context
-- Ask questions about document content
-- **Select from available LLM models installed in Ollama**
-- Receive AI-generated responses based on document content
-- Process documents using state-of-the-art language models
+Doc Analyzer enables you to:
+- Upload and analyze **PDF, DOCX, DOC, TXT, RTF** documents
+- Process **30+ code file formats** (Python, JS, Java, Go, Rust, and more)
+- Handle **tabular data** (Excel, CSV, ODS, JSON)
+- Process **Markdown** and **YAML** files
+- Add multiple documents to the context and query across all of them
+- Ask questions and get **streaming AI responses** generated progressively
+- Select any **LLM model** installed in Ollama
+- Use a **dedicated embedding model** (`mxbai-embed-large`) separate from the LLM
+- Extract text from **scanned or vector-path PDFs** via OCR fallback
 
-The application leverages:
-- Ollama for text generation and embeddings
-- ChromaDB for vector storage
-- LangChain for document processing
-- FastAPI and Gradio for the web interface
+The application uses:
+- **Ollama** — local LLM inference and embeddings
+- **Qdrant** — local vector store (in-memory or file-based)
+- **FastAPI** — REST API backend
+- **Vanilla HTML/JS** — lightweight, zero-dependency frontend
 
 ## Project Structure
 
 ```
 doc-analyzer/
-├── src/                        # Source code
-│   ├── app.py                  # Main FastAPI application
-│   ├── config/                 # Configuration files
-│   │   ├── __init__.py
-│   │   └── prompts.py          # Role-based prompts configuration
-│   └── processors/             # Document processors
-│       ├── base/               # Base classes
+├── src/
+│   ├── app.py                      # FastAPI app + inline HTML/JS frontend
+│   ├── config/
+│   │   └── prompts.py              # Role-based prompts
+│   ├── models/
+│   │   └── document.py             # Document dataclass
+│   ├── utils/
+│   │   └── text_splitter.py        # Recursive text splitter
+│   └── processors/
+│       ├── base/
 │       │   └── document_processor.py
-│       ├── factory.py          # Factory for processor creation
-│       ├── pdf_processor.py    # PDF document handling
-│       ├── word_processor.py   # Word document handling
-│       ├── text_processor.py   # Text file handling
-│       ├── rtf_processor.py    # RTF document handling
-│       ├── code_processor.py   # Code file handling
-│       └── rag_processor.py    # RAG implementation
-├── tests/                      # Test files
-│   ├── processors/             # Processor-specific tests
-│   │   ├── test_base_processor.py
-│   │   ├── test_factory.py
-│   │   └── test_word_processor.py
-│   │   └── test_text_processor.py
-│   │   └── test_table_processor.py
-│   └── unit/                   # Unit tests
-│       ├── test_app.py
-│       └── test_app_remove_file.py
-│       └── test_rag_processor.py
-│       └── test_rag_processor_remove.py
-├── data/                       # Data directory
-│   └── chroma/                 # ChromaDB storage
-├── Dockerfile                  # Container definition
-├── docker-compose.yml          # Container orchestration
-├── docker-compose.test.yml     # Test container configuration
-├── requirements.txt            # Production dependencies
-├── requirements-dev.txt        # Development dependencies
-└── setup.py                    # Package setup
+│       ├── factory.py
+│       ├── pdf_processor.py        # PDF + OCR fallback
+│       ├── word_processor.py
+│       ├── text_processor.py
+│       ├── rtf_processor.py
+│       ├── code_processor.py
+│       ├── table_processor.py
+│       └── rag_processor.py        # Qdrant + Ollama RAG
+├── tests/
+│   ├── processors/
+│   └── unit/
+├── data/
+│   └── qdrant/                     # Qdrant file storage (when PERSIST_VECTORDB=true)
+├── Dockerfile
+├── docker-compose.yml
+├── docker-compose.test.yml
+├── requirements.txt
+└── setup.py
 ```
 
 ## Requirements
 
-- Docker and Docker Compose
-- Ollama with your preferred language model
-- 8GB RAM minimum
-- 20GB disk space
-- Additional system dependencies (managed by Docker):
-  - poppler-utils (for PDF processing)
-  - tesseract-ocr and libtesseract-dev (for text extraction)
-  - antiword and unrtf (for DOC/DOCX/RTF processing)
+- Docker and Docker Compose (recommended)
+- Ollama running locally with at least one LLM model and `mxbai-embed-large`
+- 8 GB RAM minimum (more for larger models)
 
-### Installing Ollama
+### Ollama setup
 
-1. Install Ollama:
-   - Linux: `curl https://ollama.ai/install.sh | sh`
-   - macOS/Windows: Download from https://ollama.ai
+1. Install Ollama: https://ollama.ai
 
-2. Pull the language model (deepseek-r1:14b is the default, but you can use any Ollama model by updating the .env file):
+2. Pull the required models:
 ```bash
-ollama pull deepseek-r1:14b  # or your preferred model
+ollama pull mxbai-embed-large     # embedding model (required)
+ollama pull qwen2.5:14b           # or any other LLM you prefer
 ```
 
-## Quick Start with Docker
+## Quick Start
 
-1. Clone and setup:
+### With Docker (recommended)
+
 ```bash
 git clone https://github.com/Mauto82/doc-analyzer
 cd doc-analyzer
 cp .env.example .env
+# Edit .env and set LLM_MODEL to the model you pulled
+docker compose up -d
 ```
 
-2. Configure `.env`:
+Open http://localhost:8000
+
+### Local development
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env — make sure OLLAMA_HOST=localhost
+uvicorn src.app:app --reload --port 8000
+```
+
+## Configuration
+
+Copy `.env.example` to `.env` and adjust:
+
 ```env
-OLLAMA_HOST=host.docker.internal  # Use 'localhost' for local dev
+# LLM model for text generation (any model available in Ollama)
+LLM_MODEL=qwen2.5:14b
+
+# Dedicated embedding model
+EMBEDDING_MODEL=mxbai-embed-large:latest
+
+# Ollama connection
+OLLAMA_HOST=localhost        # use 'localhost' for local dev
 OLLAMA_PORT=11434
-CHROMA_DB_PATH=/app/data/chroma
-LLM_MODEL=deepseek-r1:14b  # Default model (used as fallback if selected model is unavailable)
+
+# Vector store
+QDRANT_DB_PATH=./data/qdrant
+PERSIST_VECTORDB=false      # set to 'true' to keep data between restarts
+
+# Chunking
 CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
-PERSIST_VECTORDB=false
 ```
 
-3. Running the application:
-```bash
-# Start the web application
-docker compose up -d
+> **Docker note:** `docker-compose.yml` automatically overrides `OLLAMA_HOST` to `host.docker.internal` so the container can reach Ollama on the host machine.
 
-# Access the web interface at http://localhost:8000
-```
+> **Qdrant persistence:** With `PERSIST_VECTORDB=false` (default), the vector store is in-memory and resets on every restart. Set to `true` to persist data in `./data/qdrant` (volume-mounted in Docker).
 
-4. Running tests:
-```bash
-# Run the test suite
-docker compose -f docker-compose.test.yml up --abort-on-container-exit
-```
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Web interface |
+| `GET` | `/api/status` | Server status, loaded files, available models |
+| `POST` | `/api/upload` | Upload and index a document |
+| `DELETE` | `/api/files/{name}` | Remove a specific document from context |
+| `DELETE` | `/api/files` | Clear all documents |
+| `POST` | `/api/query` | Query (full response) |
+| `POST` | `/api/query/stream` | Query with SSE streaming response |
 
 ## Supported File Types
 
-Doc Analyzer supports a wide range of file formats:
-
-### Document Files
-- PDF (`.pdf`)
+### Documents
+- PDF (`.pdf`) — with automatic OCR fallback for scanned/vector-path PDFs
 - Microsoft Word (`.doc`, `.docx`)
 - Rich Text Format (`.rtf`)
 - Plain Text (`.txt`)
 - Markdown (`.md`)
 
-### Tabular Data Files
+### Tabular Data
 - Excel (`.xlsx`, `.xls`)
 - CSV (`.csv`)
 - OpenDocument Spreadsheet (`.ods`)
-- JSON (`.json`) - structured as tabular data
+- JSON (`.json`)
 
-### Configuration Files
+### Configuration
 - YAML (`.yaml`, `.yml`)
 
 ### Code Files
-- Python (`.py`)
-- JavaScript (`.js`)
-- TypeScript (`.ts`)
-- Java (`.java`)
-- C/C++ (`.c`, `.cpp`, `.h`, `.hpp`)
-- C# (`.cs`)
-- PHP (`.php`)
-- Go (`.go`)
-- Ruby (`.rb`)
-- Rust (`.rs`)
-- HTML (`.html`)
-- CSS (`.css`)
-- Many others...
+Python, JavaScript, TypeScript, Java, C/C++, C#, PHP, Go, Ruby, Rust, HTML, CSS, and many more.
 
-### Special Files
-- **Dockerfiles**: Due to Gradio UI limitations, Dockerfiles (which have no extension) must be renamed with an extension (e.g., `Dockerfile.txt`) before uploading. The system will automatically detect Dockerfile content based on common instructions.
+> **Dockerfiles** have no extension — rename them (e.g. `Dockerfile.txt`) before uploading. The processor will detect Dockerfile content automatically.
 
-## Tabular Data Processing
+## Usage
 
-Doc Analyzer provides robust capabilities for tabular data processing:
+1. **Upload documents** — click "Upload Document" in the sidebar. Each file is chunked and indexed into the vector store. Multiple documents can be loaded simultaneously.
 
-### Features
-- **Streamlined conversion**: Automatically converts various tabular formats into text for optimal analysis
-- **Multi-format support**: Handles CSV, Excel, ODS, and structured JSON
-- **Multi-sheet processing**: Processes all sheets in Excel and ODS documents
-- **Natural analysis**: Preserves the original data format to facilitate querying
+2. **Ask questions** — type in the chat input and press Enter (or Shift+Enter for newline). The response streams progressively as the model generates it.
 
-### Analysis Capabilities
-The tabular data processor enhances the ability to query:
-- Tabular data in various formats
-- Complex spreadsheets with multiple sheets
-- CSV files with non-standard formatting
+3. **Select role** — choose an analysis perspective:
+   - **default** — general document analysis
+   - **legal** — legal implications and regulatory analysis
+   - **financial** — costs, ROI, economic considerations
+   - **technical** — implementation details and architecture
+   - **travel** — travel info, logistics, attractions
+   - **travel_agent** — conversational travel recommendations
 
-### Tips for Using Tabular Data
-- For CSV files with non-standard formatting, the system attempts to detect delimiters automatically
-- When asking questions about tabular data, specify column names for more precise answers
-- Statistical queries (averages, maxima, trends) are particularly effective with tabular data
-- For Excel files with multiple sheets, you can reference specific sheets in your queries  
+4. **Select model** — all models installed in Ollama are available. The default from `.env` is preselected.
 
-## Usage Guide
-
-1. **Upload And Process Documents**
-   - Click upload area or drag-and-drop your document
-   - Supported formats include PDF, DOC, DOCX, TXT, RTF, code files, and more
-   - For Dockerfiles, rename the file with an extension (e.g., Dockerfile.txt) before uploading
-   - Click "Add to Context" button to add the document to the current context
-   - You can add multiple documents to the context one by one
-   - Each document added will be shown in the Context Status area
-   - The documents are processed automatically when added
-
-2. **Managing Document Context**
-   - All uploaded documents are accumulated in the context
-   - Each document's content is indexed and made available for querying
-   - You can view the current context in the "Context Status" area
-   - To remove a specific document, select it from the dropdown and click "Remove Selected File"
-   - To remove all documents, click the "Clear Context" button
-   - Clearing the context resets the vector database completely
-
-3. **Ask Questions**
-   - Type your question in the text input
-   - Select an analysis role from the dropdown:
-     - General document analysis with comprehensive and objective information
-     - Legal: Legal implications, regulatory requirements, and potential legal risks
-     - Financial: Financial analysis, costs, benefits, ROI, and economic considerations
-     - Travel: Objective analysis of travel information, logistics, attractions, and practical advice
-     - Travel Agent: Conversational travel recommendations with a warm, personal tone (emulates a real travel agent)
-     - Technical: Technical details, implementation specifics, and architectural considerations
-   - Select an LLM model from the dropdown (models are automatically populated from Ollama)
-   - Click "Send" or press Enter
-   - Receive role-specific AI-generated responses based on all documents in context
-
-4. **Multi-Document Analysis**
-   - The system automatically retrieves information from all added documents
-   - You can ask questions that require information from multiple documents
-   - The AI will combine relevant information from different documents to provide comprehensive answers
-   - The more specific your question, the more targeted the response will be
-
-5. **Model Selection**
-   - All models available in your Ollama installation are displayed in the dropdown
-   - The default model from your `.env` file is preselected
-   - The system will fall back to the default model if the selected model is unavailable
-   - Different models may be better suited for different types of documents or questions
-
-## Best Practices
-
-- Add related documents to the context for comprehensive analysis
-- Use clear, specific questions
-- Ask one question at a time
-- For complex multi-document scenarios, start with general questions
-- Wait for each response before asking the next question
-- If you're starting a new topic, consider clearing the context first
-- When uploading Dockerfiles, rename them with a `.txt` extension
-- For code files with uncommon extensions, consider renaming to a common extension
+5. **Remove documents** — click `×` next to a file to remove it from context, or "Clear All" to reset everything.
 
 ## Architecture
 
-The application consists of several components:
+### Frontend
+Vanilla HTML/JS page served by FastAPI. No framework, no build step, no CDN dependencies. Communicates with the backend via REST (`fetch`) and reads streaming responses using the `ReadableStream` API.
 
-### Web Interface (FastAPI + Gradio)
-- Handles file uploads and user interactions
-- Provides intuitive interface
-- Manages user sessions
+### RAG Processor (`rag_processor.py`)
+- Embeds chunks using `mxbai-embed-large` via `ollama.Client.embed()`
+- Stores vectors in Qdrant (cosine distance, 1024 dimensions)
+- On query: embeds the question, retrieves top-4 chunks, builds a prompt with context, generates the answer via `ollama.Client.chat()`
+- Streaming: `chat(stream=True)` returns a generator; each token is forwarded as an SSE event
+- Automatic retry with progressive truncation (80% each attempt) when a chunk exceeds the embedding model's context length
 
-### Document Processors
-- PDF Processor:
-  - Extracts text from PDF documents using PyMuPDF
-  - Splits content into manageable chunks
-- Word Processor:
-  - Processes DOC files using antiword
-  - Handles DOCX files using python-docx
-- Text Processor:
-  - Processes plain text files
-- RTF Processor:
-  - Processes Rich Text Format files using textract
-- Code Processor:
-  - Handles various programming languages and code files
-  - Provides language-specific metadata
-  - Identifies Dockerfiles based on content patterns
+### PDF Processor (`pdf_processor.py`)
+- Extracts text with PyMuPDF (`fitz`)
+- If a page returns no text (scanned PDF or vector-path text from macOS Quartz), falls back to OCR: renders the page at 300 DPI and runs `pytesseract.image_to_string()`
 
-### RAG Processor
-- Creates embeddings using various language models via Ollama
-- Stores vectors in ChromaDB
-- Retrieves relevant content for queries
-- Generates responses using selectable AI models
-- Supports model selection directly from the interface
-- Automatically uses available Ollama models
+### Vector Store
+Qdrant in in-memory mode (`:memory:`) by default, or file-based when `PERSIST_VECTORDB=true`. Each chunk is stored as a point with its text and source metadata. Documents are removed by their chunk UUIDs.
 
-### Vector Store (ChromaDB)
-- Stores document embeddings from multiple documents
-- Enables semantic search across all documents
-- Maintains document-query relevance
+## Running Tests
+
+```bash
+# With Docker
+docker compose -f docker-compose.test.yml up --abort-on-container-exit
+
+# Locally
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## Troubleshooting
 
-### Dockerfiles Not Being Recognized
-- Rename your Dockerfile to include an extension (e.g., Dockerfile.txt)
-- Ensure the Dockerfile contains standard Docker instructions
-- The system requires at least 2 common Dockerfile instructions to automatically detect it
+### Ollama not reachable
+- Local dev: verify `OLLAMA_HOST=localhost` and Ollama is running (`ollama list`)
+- Docker: `OLLAMA_HOST` is overridden to `host.docker.internal` automatically
+- Check: `curl http://localhost:11434/api/tags`
 
-### Database Issues
-If you get "readonly database" error in local development:
+### "No content extracted" on PDF upload
+The PDF likely contains only scanned images or vector-drawn text. Make sure `pytesseract` and `tesseract-ocr` are installed (they are included in the Docker image). For local dev:
 ```bash
-chmod -R 777 ./data
-rm -rf ./data/chroma/*
+brew install tesseract        # macOS
+sudo apt install tesseract-ocr  # Ubuntu/Debian
+pip install pytesseract Pillow
 ```
 
-### Ollama Connection
-1. Verify Ollama is running: `ollama list`
-2. Check service: `curl http://localhost:11434/api/tags`
-3. Check `.env` configuration matches your setup
-4. For Docker Desktop users, ensure `host.docker.internal` is used
+### "Input length exceeds context length" during upload
+This is handled automatically — the processor retries with progressively shorter chunks. If it persists, reduce `CHUNK_SIZE` in `.env`.
 
-### Document Processing Issues
-- PDF files: Ensure the PDF is not password-protected
-- DOC files: File must be readable by antiword
-- DOCX files: File must be a valid Office Open XML format
-- RTF files: Must be standard RTF format readable by textract
-- If text extraction fails, try converting the document to PDF or TXT
-- If adding a document doesn't update the context, try clearing the context and adding it again
+### Qdrant data lost after restart
+Set `PERSIST_VECTORDB=true` in `.env`. The `./data` directory is volume-mounted in Docker, so data will survive restarts.
+
+### Docker container management
+```bash
+docker compose up -d           # start
+docker compose up --build -d   # rebuild and start
+docker compose restart         # restart without rebuild
+docker compose logs -f         # follow logs
+docker stop doc-analyzer-web-1 # stop specific container
+```
 
 ## Contributing
 
-1. Fork repository
-2. Create feature branch: `git checkout -b feature-name`
-3. Commit changes: `git commit -am 'Add feature'`
-4. Push branch: `git push origin feature-name`
-5. Submit Pull Request
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Commit your changes: `git commit -m 'Add feature'`
+4. Push and open a Pull Request
 
-### Development Guidelines
-- Follow PEP 8 style guide
-- Add tests for new features
-- Update documentation
-- Keep commits focused and clean
+Follow PEP 8, add tests for new features, update docs.
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License — see LICENSE file for details.

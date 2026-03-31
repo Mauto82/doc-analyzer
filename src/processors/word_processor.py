@@ -1,10 +1,13 @@
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from src.models.document import Document
+from src.utils.text_splitter import RecursiveCharacterTextSplitter
 from .base.document_processor import DocumentProcessor
 import tempfile
 import os
 import docx
-import textract
+try:
+    import textract
+except ImportError:
+    textract = None
 
 class WordProcessor(DocumentProcessor):
     """Word document (.doc, .docx) processor implementation"""
@@ -57,6 +60,8 @@ class WordProcessor(DocumentProcessor):
 
     def _process_doc(self, file_path):
         """Process .doc file using textract"""
+        if textract is None:
+            raise ImportError("textract is required to process .doc files. Install it with: pip install textract")
         return textract.process(file_path).decode('utf-8')
 
     def _get_suffix(self, file_obj):

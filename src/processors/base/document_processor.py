@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List
-from langchain.schema import Document
+from src.models.document import Document
 
 class DocumentProcessor(ABC):
     """Base class for document processors"""

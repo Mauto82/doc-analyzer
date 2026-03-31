@@ -1,6 +1,6 @@
 import pytest
 from src.processors.text_processor import TextProcessor
-from langchain.schema import Document
+from src.models.document import Document
 import os
 import tempfile
 
