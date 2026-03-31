@@ -9,10 +9,7 @@ from qdrant_client.models import Distance, PointIdsList, PointStruct, VectorPara
 from src.config.prompts import BASE_PROMPT, registry as prompt_registry
 from src.models.document import Document
 
-VECTOR_SIZE = 1024          # mxbai-embed-large output dimension
 DEFAULT_COLLECTION = "default"
-_TRUNCATION_FACTOR = 0.8    # reduce text to 80% on each retry
-_MAX_TRUNCATION_ATTEMPTS = 12   # safety bound: 0.8^12 ≈ 7% of original
 
 
 class RAGProcessor:
@@ -31,6 +28,9 @@ class RAGProcessor:
         model_name: str,
         embedding_model: str,
         qdrant_path: str,
+        vector_size: int = 1024,
+        truncation_factor: float = 0.8,
+        max_truncation_attempts: int = 12,
     ) -> None:
         self.model_name = model_name
         self.embedding_model = embedding_model
@@ -38,6 +38,9 @@ class RAGProcessor:
         self.ollama_client = ollama_client
         self._mode = "memory"
         self.qdrant = qdrant_client
+        self._vector_size = vector_size
+        self._truncation_factor = truncation_factor
+        self._max_truncation_attempts = max_truncation_attempts
 
     # ── Factory ───────────────────────────────────────────────────────────────
 
@@ -58,6 +61,9 @@ class RAGProcessor:
             model_name=model_name,
             embedding_model=os.getenv("EMBEDDING_MODEL", "mxbai-embed-large:latest"),
             qdrant_path=os.getenv("QDRANT_DB_PATH", "./data/qdrant"),
+            vector_size=int(os.getenv("EMBEDDING_VECTOR_SIZE", "1024")),
+            truncation_factor=float(os.getenv("EMBEDDING_TRUNCATION_FACTOR", "0.8")),
+            max_truncation_attempts=int(os.getenv("EMBEDDING_MAX_TRUNCATION_ATTEMPTS", "12")),
         )
 
     # ── Storage mode ──────────────────────────────────────────────────────────
@@ -95,7 +101,7 @@ class RAGProcessor:
         if name not in self.get_collections():
             self.qdrant.create_collection(
                 collection_name=name,
-                vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+                vectors_config=VectorParams(size=self._vector_size, distance=Distance.COSINE),
             )
 
     def delete_collection(self, name: str) -> None:
@@ -115,7 +121,7 @@ class RAGProcessor:
             RuntimeError: if the text cannot be embedded even after truncation.
         """
         attempt = text
-        for _ in range(_MAX_TRUNCATION_ATTEMPTS):
+        for _ in range(self._max_truncation_attempts):
             try:
                 response = self.ollama_client.embed(
                     model=self.embedding_model, input=[attempt]
@@ -124,7 +130,7 @@ class RAGProcessor:
             except Exception as exc:
                 error_msg = str(exc).lower()
                 if "context length" in error_msg or "input length" in error_msg:
-                    attempt = attempt[: int(len(attempt) * _TRUNCATION_FACTOR)]
+                    attempt = attempt[: int(len(attempt) * self._truncation_factor)]
                     if not attempt:
                         raise RuntimeError(
                             "Text reduced to empty string during embedding truncation"
@@ -132,7 +138,7 @@ class RAGProcessor:
                 else:
                     raise
         raise RuntimeError(
-            f"Failed to embed text after {_MAX_TRUNCATION_ATTEMPTS} truncation attempts"
+            f"Failed to embed text after {self._max_truncation_attempts} truncation attempts"
         )
 
     def _get_embeddings(self, texts: List[str]) -> List[List[float]]:
