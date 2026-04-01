@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.6.0] - 2026-04-01
+
+Feature release: autenticazione, citazioni, note, cronologia chat, drag & drop e separazione frontend.
+
+### Sicurezza
+
+- **HTTP Basic Auth** su tutte le route `/api/*` — credenziali configurabili via `APP_USERNAME` e `APP_PASSWORD` in `.env`
+- Confronto con `secrets.compare_digest` per prevenire timing attacks
+
+### Citazioni delle fonti
+
+- `query_stream()` emette ora eventi strutturati: `{"type":"sources","sources":[...]}` prima dei token di testo
+- Ogni sorgente include `file`, `page` e `score` (arrotondato a 3 decimali)
+- Il frontend mostra il blocco **Sources** sotto ogni risposta con file, pagina e match score in %
+- `query()` filtra internamente solo gli eventi `text` — nessuna breaking change per i consumer esistenti
+
+### Note (SQLite)
+
+- Nuovo `src/models/note.py` — dataclass con `title` auto-generato (primi 80 caratteri della domanda)
+- Nuovo `src/services/note_service.py` — CRUD su `./data/notes.db` con `sqlite3` built-in (zero nuove dipendenze)
+- 4 nuove route: `POST /api/notes`, `GET /api/notes`, `GET /api/notes/{id}`, `DELETE /api/notes/{id}`
+- UI: pulsante **💾 Save** su ogni risposta bot (visibile a hover), pannello **📓 Notes** collassabile a destra con lista e detail view
+- Le note sono indipendenti da Qdrant — sopravvivono a `Clear All` e ai cambi di modalità
+
+### Cronologia chat e export
+
+- La conversazione viene salvata in `localStorage` ad ogni messaggio e ripristinata al refresh della pagina
+- Pulsante **⬇ Export** nell'header — scarica la conversazione come file `.md`
+- `Clear All` svuota anche la cronologia in `localStorage`
+
+### Upload: drag & drop e progress bar
+
+- Le upload zone accettano file trascinati direttamente — highlight visivo durante il drag
+- Upload sostituito con `XMLHttpRequest` per esporre l'evento `progress`
+- Barra di avanzamento sotto il pulsante durante l'upload (3px, scompare al termine)
+
+### Frontend separato
+
+- L'HTML della UI (era 767 righe embedded nel raw string di `app.py`) estratto in `src/templates/index.html`
+- `app.py` scende da 1003 a ~250 righe; il template viene servito via `FileResponse`
+- I file HTML/CSS/JS ora hanno syntax highlighting e linting nei propri editor
+
+### Configurazione
+
+- Nuove variabili in `.env.example`: `APP_USERNAME`, `APP_PASSWORD`
+- `EMBEDDING_VECTOR_SIZE`, `EMBEDDING_TRUNCATION_FACTOR`, `EMBEDDING_MAX_TRUNCATION_ATTEMPTS` letti dall'ambiente (con default invariati) — cambio modello embedding senza toccare il codice
+- Rimossa la variabile `PERSIST_VECTORDB` (era dead config — la modalità è controllata dal toggle UI)
+
+### Test: da 92 a 175
+
+- `tests/unit/test_notes.py` — 18 test su `NoteService` e route `/api/notes`
+- `tests/unit/test_rag_processor_sources.py` — 7 test sugli eventi strutturati di `query_stream`
+- `tests/unit/conftest.py` — fixture `app_client` condivisa tra i test di app
+- Aggiornati `test_rag_processor_extras.py` e `test_app_query_stream.py` per il nuovo formato dict
+
+---
+
 ## [0.5.0] - 2026-03-31
 
 Refactoring architetturale completo e sistema di prompt esterno con auto-discovery.

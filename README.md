@@ -11,10 +11,14 @@ Doc Analyzer enables you to:
 - Process **Markdown** and **YAML** files
 - Organize documents into **named collections** and query across multiple collections simultaneously
 - Switch between **in-memory** (volatile) and **persistent** storage from the UI
-- Ask questions and get **streaming AI responses** rendered in Markdown
+- Ask questions and get **streaming AI responses** with **source citations** rendered in Markdown
 - Select any **LLM model** installed in Ollama
 - Choose an **analysis role** (legal, financial, technical…) and add custom ones without touching the code
 - Extract text from **scanned or vector-path PDFs** via automatic OCR fallback
+- Save responses as **notes** (SQLite) and review them in the built-in notebook panel
+- **Export** the conversation as a Markdown file
+- **Drag & drop** files directly onto the upload zone
+- Access the app with **HTTP Basic Auth** — credentials set in `.env`
 
 The application uses:
 - **Ollama** — local LLM inference and embeddings
@@ -27,11 +31,14 @@ The application uses:
 ```
 doc-analyzer/
 ├── src/
-│   ├── app.py                          # FastAPI routes + inline HTML/JS frontend
+│   ├── app.py                          # FastAPI routes (239 lines)
+│   ├── templates/
+│   │   └── index.html                  # Frontend — HTML/CSS/JS
 │   ├── config/
 │   │   └── prompts.py                  # PromptRegistry: auto-discovers src/prompts/
 │   ├── models/
-│   │   └── document.py                 # Document dataclass
+│   │   ├── document.py                 # Document dataclass
+│   │   └── note.py                     # Note dataclass
 │   ├── prompts/                        # Role prompt files — add .md to create new roles
 │   │   ├── default.md
 │   │   ├── financial.md
@@ -40,7 +47,8 @@ doc-analyzer/
 │   │   ├── travel.md
 │   │   └── travel_agent.md
 │   ├── services/
-│   │   └── document_service.py         # State management and document orchestration
+│   │   ├── document_service.py         # State management and document orchestration
+│   │   └── note_service.py             # SQLite-backed notes CRUD
 │   ├── utils/
 │   │   └── text_splitter.py            # Recursive character text splitter
 │   └── processors/
@@ -58,7 +66,8 @@ doc-analyzer/
 │   ├── processors/
 │   └── unit/
 ├── data/
-│   └── qdrant/                         # Qdrant file storage (persist mode)
+│   ├── qdrant/                         # Qdrant file storage (persist mode)
+│   └── notes.db                        # SQLite notes database
 ├── Dockerfile
 ├── docker-compose.yml
 ├── docker-compose.test.yml
@@ -110,6 +119,10 @@ uvicorn src.app:app --reload --port 8000
 Copy `.env.example` to `.env` and adjust:
 
 ```env
+# Auth (HTTP Basic)
+APP_USERNAME=admin
+APP_PASSWORD=changeme
+
 # LLM model for text generation (any model available in Ollama)
 LLM_MODEL=qwen2.5:14b
 
@@ -148,6 +161,10 @@ CHUNK_OVERLAP=200
 | `POST` | `/api/query` | Query (full response) |
 | `POST` | `/api/query/stream` | Query with SSE streaming response |
 | `POST` | `/api/prompts/reload` | Reload prompts from disk without restart |
+| `GET` | `/api/notes` | List all saved notes |
+| `POST` | `/api/notes` | Save a new note |
+| `GET` | `/api/notes/{id}` | Get a single note |
+| `DELETE` | `/api/notes/{id}` | Delete a note |
 
 ## Supported File Types
 
@@ -188,8 +205,22 @@ Python, JavaScript, TypeScript, Java, C/C++, C#, PHP, Go, Ruby, Rust, HTML, CSS,
 
 - Type your question and press **Enter** (Shift+Enter for newline)
 - Responses stream progressively and render **Markdown** (code blocks, lists, bold, etc.)
+- Each response shows **source citations** — the documents and pages used to generate the answer
 - Select a **role** to frame the analysis perspective
 - Select a **model** — all models installed in Ollama are available
+
+### Notes
+
+- Click **💾 Save** (appears on hover over any bot response) to save a Q&A pair as a note
+- Open the **📓 Notes** panel from the header to browse saved notes
+- Notes persist in `./data/notes.db` across restarts and are independent from the vector store
+- Click a note to expand the full question and answer
+
+### Chat history and export
+
+- The conversation is automatically saved to `localStorage` and restored on page refresh
+- Click **⬇ Export** in the header to download the full conversation as a `.md` file
+- **Clear All** resets both the vector store and the chat history
 
 ### Custom roles
 
@@ -216,9 +247,15 @@ Centralises all document state and orchestration. FastAPI routes are thin HTTP a
 ### RAG Processor (`rag_processor.py`)
 - Accepts injected Ollama and Qdrant clients (Dependency Injection) — fully testable without environment setup
 - Embeds chunks using `mxbai-embed-large` via `ollama.Client.embed()`
-- Stores vectors in Qdrant (cosine distance, 1024 dimensions)
-- On query: embeds the question, retrieves top-4 chunks per collection, merges and re-ranks globally, generates the answer via `ollama.Client.chat(stream=True)`
-- Automatic retry with progressive truncation (up to 12 attempts at 80% each) when a chunk exceeds the embedding model's context length
+- Stores vectors in Qdrant (cosine distance, configurable dimensions via `EMBEDDING_VECTOR_SIZE`)
+- On query: embeds the question, retrieves top-4 chunks per collection, merges and re-ranks globally, streams the answer via `ollama.Client.chat(stream=True)`
+- `query_stream()` emits structured events: `{"type":"sources", "sources":[...]}` first, then `{"type":"text", "text":"token"}` — the frontend renders citations and text separately
+- Automatic retry with progressive truncation (configurable via `EMBEDDING_TRUNCATION_FACTOR` and `EMBEDDING_MAX_TRUNCATION_ATTEMPTS`) when a chunk exceeds the embedding model's context length
+
+### Note Service (`services/note_service.py`)
+- Persists Q&A pairs with sources, collection, and role to `./data/notes.db` (SQLite, no extra dependencies)
+- Auto-creates the DB and schema on first run
+- Notes are independent from Qdrant — survive `Clear All` and storage mode switches
 
 ### Prompt Registry (`config/prompts.py`)
 Auto-discovers `*.md` files from `src/prompts/`, parses display name from the first `# Heading`, exposes `reload()` for hot-reload without restart.
@@ -240,7 +277,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-92 tests covering: RAG processor, document service, prompt registry, all processors, API endpoints.
+175 tests covering: RAG processor (including sources events and truncation logic), document service, note service, prompt registry, all processors, API endpoints (upload, collections, streaming, notes).
 
 ## Troubleshooting
 
