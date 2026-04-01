@@ -23,33 +23,60 @@ def test_stream_no_documents(app_client):
     assert "No documents" in res.json()["detail"]
 
 
+def _text_events(*tokens):
+    """Build structured dict events as query_stream now yields."""
+    return iter([{"type": "text", "text": t} for t in tokens])
+
+
 def test_stream_yields_tokens(app_client):
     client, mock_rag, _ = app_client
     _seed_file(client)
 
-    mock_rag.query_stream.return_value = iter(["Hello", " world", "!"])
+    mock_rag.query_stream.return_value = _text_events("Hello", " world", "!")
 
     with client.stream("POST", "/api/query/stream",
                        json={"question": "What is this?", "role": "default"}) as resp:
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers["content-type"]
-
         raw = resp.read().decode()
 
-    # All three tokens must appear in the SSE payload
     payloads = [
         json.loads(line[6:])
         for line in raw.splitlines()
         if line.startswith("data: ") and line[6:].strip() != "[DONE]"
     ]
-    texts = [p["text"] for p in payloads if "text" in p]
+    texts = [p["text"] for p in payloads if p.get("type") == "text"]
     assert "".join(texts) == "Hello world!"
+
+
+def test_stream_sources_event_forwarded(app_client):
+    client, mock_rag, _ = app_client
+    _seed_file(client)
+
+    sources = [{"file": "doc.pdf", "page": 0, "score": 0.9}]
+    mock_rag.query_stream.return_value = iter([
+        {"type": "sources", "sources": sources},
+        {"type": "text", "text": "answer"},
+    ])
+
+    with client.stream("POST", "/api/query/stream",
+                       json={"question": "test"}) as resp:
+        raw = resp.read().decode()
+
+    payloads = [
+        json.loads(line[6:])
+        for line in raw.splitlines()
+        if line.startswith("data: ") and line[6:].strip() != "[DONE]"
+    ]
+    source_events = [p for p in payloads if p.get("type") == "sources"]
+    assert len(source_events) == 1
+    assert source_events[0]["sources"] == sources
 
 
 def test_stream_done_sentinel(app_client):
     client, mock_rag, _ = app_client
     _seed_file(client)
-    mock_rag.query_stream.return_value = iter(["ok"])
+    mock_rag.query_stream.return_value = _text_events("ok")
 
     with client.stream("POST", "/api/query/stream",
                        json={"question": "test"}) as resp:
@@ -61,7 +88,7 @@ def test_stream_done_sentinel(app_client):
 def test_stream_passes_role_and_model(app_client):
     client, mock_rag, _ = app_client
     _seed_file(client)
-    mock_rag.query_stream.return_value = iter(["answer"])
+    mock_rag.query_stream.return_value = _text_events("answer")
 
     with client.stream("POST", "/api/query/stream",
                        json={"question": "q", "role": "legal",

@@ -20,6 +20,7 @@ from src.config.prompts import registry as prompt_registry
 from src.processors.factory import get_processor
 from src.processors.rag_processor import DEFAULT_COLLECTION, RAGProcessor
 from src.services.document_service import DocumentService
+from src.services.note_service import NoteService
 
 
 # ── Bootstrap ─────────────────────────────────────────────────────────────────
@@ -35,6 +36,7 @@ app.add_middleware(
 
 rag_processor = RAGProcessor.from_env()
 document_service = DocumentService(rag_processor)
+note_service = NoteService()
 
 default_model = os.getenv("LLM_MODEL")
 
@@ -231,14 +233,14 @@ def query_stream(req: QueryRequest, _: None = Depends(require_auth)):
 
     def generate():
         try:
-            for chunk in rag_processor.query_stream(
+            for event in rag_processor.query_stream(
                 req.question.strip(), cols, req.role, req.model
             ):
-                yield f"data: {json.dumps({'text': chunk})}\n\n"
+                yield f"data: {json.dumps(event)}\n\n"
         except ValueError as exc:
-            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
         except Exception as exc:
-            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -246,6 +248,58 @@ def query_stream(req: QueryRequest, _: None = Depends(require_auth)):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── Notes ─────────────────────────────────────────────────────────────────────
+
+class NoteRequest(BaseModel):
+    question: str
+    answer: str
+    sources: List[dict] = []
+    collection: str = DEFAULT_COLLECTION
+    role: str = "default"
+
+
+@app.post("/api/notes")
+def save_note(req: NoteRequest, _: None = Depends(require_auth)):
+    from src.models.note import Note
+    note = note_service.save(Note(
+        question=req.question,
+        answer=req.answer,
+        sources=req.sources,
+        collection=req.collection,
+        role=req.role,
+    ))
+    return {"id": note.id, "title": note.title, "created_at": note.created_at}
+
+
+@app.get("/api/notes")
+def list_notes(_: None = Depends(require_auth)):
+    notes = note_service.list()
+    return {"notes": [
+        {"id": n.id, "title": n.title, "question": n.question,
+         "answer": n.answer, "sources": n.sources,
+         "collection": n.collection, "role": n.role, "created_at": n.created_at}
+        for n in notes
+    ]}
+
+
+@app.get("/api/notes/{note_id}")
+def get_note(note_id: int, _: None = Depends(require_auth)):
+    note = note_service.get(note_id)
+    if not note:
+        raise HTTPException(404, f"Note {note_id} not found")
+    return {"id": note.id, "title": note.title, "question": note.question,
+            "answer": note.answer, "sources": note.sources,
+            "collection": note.collection, "role": note.role,
+            "created_at": note.created_at}
+
+
+@app.delete("/api/notes/{note_id}")
+def delete_note(note_id: int, _: None = Depends(require_auth)):
+    if not note_service.delete(note_id):
+        raise HTTPException(404, f"Note {note_id} not found")
+    return {"deleted": note_id}
 
 
 # ── Frontend ───────────────────────────────────────────────────────────────────

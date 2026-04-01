@@ -162,16 +162,19 @@ def test_query_stream_yields_tokens(rag):
     chunk2.message.content = " world"
     rag.ollama_client.chat.return_value = iter([chunk1, chunk2])
 
-    tokens = list(rag.query_stream("question", [DEFAULT_COLLECTION]))
-    assert tokens == ["Hello", " world"]
+    events = list(rag.query_stream("question", [DEFAULT_COLLECTION]))
+    # First event is sources, then text tokens
+    text_tokens = [e["text"] for e in events if e.get("type") == "text"]
+    assert text_tokens == ["Hello", " world"]
 
 
 def test_query_stream_no_results_yields_message(rag):
     rag.qdrant.query_points.return_value = MagicMock(points=[])
 
-    tokens = list(rag.query_stream("question", [DEFAULT_COLLECTION]))
-    assert len(tokens) == 1
-    assert "couldn't find" in tokens[0].lower()
+    events = list(rag.query_stream("question", [DEFAULT_COLLECTION]))
+    text_events = [e for e in events if e.get("type") == "text"]
+    assert len(text_events) == 1
+    assert "couldn't find" in text_events[0]["text"].lower()
 
 
 def test_query_stream_invalid_role_raises(rag):
@@ -192,8 +195,9 @@ def test_query_stream_skips_empty_content(rag):
     c2.message.content = "answer"
     rag.ollama_client.chat.return_value = iter([c1, c2])
 
-    tokens = list(rag.query_stream("q", [DEFAULT_COLLECTION]))
-    assert tokens == ["answer"]
+    events = list(rag.query_stream("q", [DEFAULT_COLLECTION]))
+    text_tokens = [e["text"] for e in events if e.get("type") == "text"]
+    assert text_tokens == ["answer"]
 
 
 # ── rebuild_files_map() ────────────────────────────────────────────────────────

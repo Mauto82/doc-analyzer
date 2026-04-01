@@ -47,13 +47,20 @@
                      text-transform: uppercase; letter-spacing: .6px;
                      padding: 10px 14px 6px; }
 
-  .upload-zone { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .upload-zone { padding: 10px 12px; border-bottom: 1px solid var(--border);
+                 transition: background .15s, border-color .15s; }
+  .upload-zone.drag-over { background: rgba(59,130,246,.08); border-color: var(--accent); }
   .upload-btn { width: 100%; padding: 8px; background: var(--accent); color: #fff;
                 border: none; border-radius: var(--radius); cursor: pointer; font-size: 13px;
                 font-weight: 500; transition: opacity .15s; }
   .upload-btn:hover:not(:disabled) { opacity: .85; }
   .upload-btn:disabled { opacity: .4; cursor: not-allowed; }
   input[type=file] { display: none; }
+  .upload-progress { height: 3px; background: var(--border); border-radius: 2px;
+                     margin-top: 6px; overflow: hidden; display: none; }
+  .upload-progress.active { display: block; }
+  .upload-progress-bar { height: 100%; background: var(--accent); width: 0%;
+                          transition: width .1s linear; border-radius: 2px; }
 
   /* Collection selector for upload (persist mode) */
   .upload-target { display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
@@ -170,6 +177,66 @@
                         color: var(--muted); margin: 6px 0; }
   .msg.bot hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
 
+  /* ── Source citations ── */
+  .sources { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+  .sources-label { font-size: 10px; font-weight: 700; color: var(--muted);
+                   text-transform: uppercase; letter-spacing: .06em; margin-bottom: 5px; }
+  .source-item { display: flex; align-items: center; gap: 6px; font-size: 11px;
+                 color: var(--muted); padding: 2px 0; }
+  .source-item .source-file { color: var(--text); font-weight: 500;
+                               white-space: nowrap; overflow: hidden;
+                               text-overflow: ellipsis; max-width: 220px; }
+  .source-item .source-page { flex-shrink: 0; }
+  .source-item .source-score { flex-shrink: 0; font-size: 10px;
+                                color: var(--accent); margin-left: auto; }
+
+  /* ── Notes panel ── */
+  .notes-panel { width: 300px; border-left: 1px solid var(--border); display: flex;
+                 flex-direction: column; background: var(--surface); flex-shrink: 0;
+                 transition: width .2s; overflow: hidden; }
+  .notes-panel.collapsed { width: 0; border-left: none; }
+  .notes-header { display: flex; align-items: center; justify-content: space-between;
+                  padding: 10px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .notes-header span { font-size: 12px; font-weight: 700; color: var(--muted);
+                        text-transform: uppercase; letter-spacing: .06em; }
+  .notes-list { flex: 1; overflow-y: auto; padding: 8px; display: flex;
+                flex-direction: column; gap: 6px; }
+  .note-card { background: var(--surface2); border: 1px solid var(--border);
+               border-radius: var(--radius); padding: 10px 12px; cursor: pointer;
+               transition: border-color .15s; position: relative; }
+  .note-card:hover { border-color: var(--accent); }
+  .note-card .note-title { font-size: 12px; font-weight: 600; color: var(--text);
+                            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                            margin-bottom: 3px; padding-right: 18px; }
+  .note-card .note-meta { font-size: 10px; color: var(--muted); }
+  .note-card .note-del { position: absolute; top: 8px; right: 8px; background: none;
+                          border: none; color: var(--muted); cursor: pointer;
+                          font-size: 13px; line-height: 1; padding: 2px; }
+  .note-card .note-del:hover { color: var(--danger); }
+  .note-empty { font-size: 12px; color: var(--muted); text-align: center; padding: 24px 8px; }
+
+  /* note detail */
+  .note-detail { flex: 1; overflow-y: auto; padding: 12px; display: none;
+                 flex-direction: column; gap: 10px; }
+  .note-detail.active { display: flex; }
+  .note-detail .nd-back { background: none; border: 1px solid var(--border);
+                           color: var(--muted); border-radius: var(--radius);
+                           padding: 4px 10px; cursor: pointer; font-size: 11px;
+                           align-self: flex-start; margin-bottom: 4px; }
+  .note-detail .nd-q { font-size: 12px; font-weight: 700; color: var(--text); }
+  .note-detail .nd-a { font-size: 12px; color: var(--text); line-height: 1.6;
+                        white-space: pre-wrap; word-wrap: break-word; }
+  .note-detail .nd-meta { font-size: 10px; color: var(--muted); }
+
+  /* save button on bot messages */
+  .msg.bot { position: relative; }
+  .save-note-btn { position: absolute; top: 6px; right: 6px; background: var(--surface2);
+                   border: 1px solid var(--border); color: var(--muted); border-radius: 5px;
+                   padding: 3px 7px; font-size: 10px; cursor: pointer; opacity: 0;
+                   transition: opacity .15s; white-space: nowrap; }
+  .msg.bot:hover .save-note-btn { opacity: 1; }
+  .save-note-btn:hover { color: var(--accent); border-color: var(--accent); }
+
   @media (max-width: 700px) {
     .app { flex-direction: column; }
     .sidebar { width: 100%; max-height: 220px; border-right: none;
@@ -196,6 +263,12 @@
       style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);
              padding:5px 8px;cursor:pointer;font-size:12px;">↻</button>
     <select id="model"></select>
+    <button onclick="exportChat()" title="Export chat as Markdown"
+      style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);
+             padding:5px 10px;cursor:pointer;font-size:12px;">⬇ Export</button>
+    <button onclick="toggleNotesPanel()" title="Notes"
+      style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);
+             padding:5px 10px;cursor:pointer;font-size:12px;">📓 Notes</button>
   </div>
 </header>
 
@@ -205,11 +278,14 @@
     <!-- MEMORY sidebar -->
     <div id="memorySidebar">
       <div class="sidebar-section">Documents</div>
-      <div class="upload-zone">
+      <div class="upload-zone" id="uploadZoneMemory">
         <input type="file" id="fileInputMemory" onchange="handleUpload(this, 'default')">
         <button class="upload-btn" onclick="document.getElementById('fileInputMemory').click()">
           Upload Document
         </button>
+        <div class="upload-progress" id="progressMemory">
+          <div class="upload-progress-bar" id="progressBarMemory"></div>
+        </div>
       </div>
       <div class="file-list" id="memoryFileList">
         <div class="empty-msg">No documents loaded</div>
@@ -241,12 +317,15 @@
       <div class="files-section-header">
         Files in <span class="in-col" id="activeColLabel">—</span>
       </div>
-      <div class="upload-zone">
+      <div class="upload-zone" id="uploadZonePersist">
         <input type="file" id="fileInputPersist" onchange="handleUploadPersist(this)">
         <button class="upload-btn" id="uploadBtnPersist"
                 onclick="document.getElementById('fileInputPersist').click()">
           Upload to Collection
         </button>
+        <div class="upload-progress" id="progressPersist">
+          <div class="upload-progress-bar" id="progressBarPersist"></div>
+        </div>
       </div>
       <div class="file-list" id="persistFileList">
         <div class="empty-msg">Select a collection</div>
@@ -266,6 +345,24 @@
       <button id="sendBtn" onclick="sendQuery()" disabled>Send</button>
     </div>
   </main>
+
+  <!-- Notes panel -->
+  <aside class="notes-panel collapsed" id="notesPanel">
+    <div class="notes-header">
+      <span>Notes</span>
+      <button onclick="toggleNotesPanel()"
+        style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;">×</button>
+    </div>
+    <!-- list view -->
+    <div class="notes-list" id="notesList"></div>
+    <!-- detail view -->
+    <div class="note-detail" id="noteDetail">
+      <button class="nd-back" onclick="showNotesList()">← Back</button>
+      <div class="nd-meta" id="ndMeta"></div>
+      <div class="nd-q" id="ndQuestion"></div>
+      <div class="nd-a" id="ndAnswer"></div>
+    </div>
+  </aside>
 </div>
 
 <script>
@@ -315,6 +412,10 @@ async function init() {
     renderMemoryFiles();
   }
   updateSendBtn();
+
+  // Drag & drop
+  setupDragDrop('uploadZoneMemory', () => 'default');
+  setupDragDrop('uploadZonePersist', () => state.activeCollection);
 }
 
 // ── Prompts ───────────────────────────────────────────────────────────────────
@@ -486,32 +587,122 @@ async function deleteCollection(col) {
 
 // ── Upload ────────────────────────────────────────────────────────────────────
 
+function uploadFile(file, collection, zone) {
+  return new Promise((resolve, reject) => {
+    const btn = zone.querySelector('.upload-btn');
+    const progressWrap = zone.querySelector('.upload-progress');
+    const progressBar  = zone.querySelector('.upload-progress-bar');
+
+    btn.disabled = true;
+    btn.textContent = 'Uploading...';
+    progressWrap.classList.add('active');
+    progressBar.style.width = '0%';
+
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('collection', collection);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', API + '/api/upload');
+
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable) {
+        progressBar.style.width = Math.round(e.loaded / e.total * 100) + '%';
+      }
+    });
+
+    xhr.addEventListener('load', () => {
+      progressBar.style.width = '100%';
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(JSON.parse(xhr.responseText));
+      } else {
+        try { reject(new Error(JSON.parse(xhr.responseText).detail || 'Upload failed')); }
+        catch { reject(new Error('Upload failed')); }
+      }
+    });
+
+    xhr.addEventListener('error', () => reject(new Error('Network error')));
+
+    xhr.send(fd);
+  });
+}
+
 async function handleUpload(input, collection) {
   const file = input.files[0];
   if (!file) return;
-  const btn = input.closest('.upload-zone').querySelector('.upload-btn');
-  btn.disabled = true;
-  btn.textContent = 'Uploading...';
-  const fd = new FormData();
-  fd.append('file', file);
-  fd.append('collection', collection);
+  const zone = input.closest('.upload-zone');
+  const btn  = zone.querySelector('.upload-btn');
+  const progressWrap = zone.querySelector('.upload-progress');
+  const progressBar  = zone.querySelector('.upload-progress-bar');
+  const defaultLabel = state.mode === 'persist' ? 'Upload to Collection' : 'Upload Document';
+
   try {
-    const res = await fetch(API + '/api/upload', {method: 'POST', body: fd});
-    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Upload failed'); }
-    const data = await res.json();
+    const data = await uploadFile(file, collection, zone);
     if (!state.filesMap[data.collection]) state.filesMap[data.collection] = [];
     state.filesMap[data.collection].push(data.file);
     if (state.mode === 'memory') renderMemoryFiles();
     else renderCollections();
     addMsg('bot', `Added "${data.file}" to "${data.collection}" (${data.chunks} chunks)`);
+    saveHistory();
     updateSendBtn();
-  } catch (err) { addMsg('error', err.message); }
-  finally { btn.disabled = false; btn.textContent = state.mode === 'persist' ? 'Upload to Collection' : 'Upload Document'; input.value = ''; }
+  } catch (err) {
+    addMsg('error', err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = defaultLabel;
+    progressWrap.classList.remove('active');
+    progressBar.style.width = '0%';
+    input.value = '';
+  }
 }
 
 async function handleUploadPersist(input) {
   if (!state.activeCollection) { addMsg('error', 'Select a collection first'); input.value = ''; return; }
   await handleUpload(input, state.activeCollection);
+}
+
+// ── Drag & drop ───────────────────────────────────────────────────────────────
+
+function setupDragDrop(zoneId, getCollection) {
+  const zone = document.getElementById(zoneId);
+  if (!zone) return;
+
+  zone.addEventListener('dragover', e => {
+    e.preventDefault();
+    zone.classList.add('drag-over');
+  });
+  zone.addEventListener('dragleave', e => {
+    if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
+  });
+  zone.addEventListener('drop', async e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const col = getCollection();
+    if (!col) { addMsg('error', 'Select a collection first'); return; }
+    const btn = zone.querySelector('.upload-btn');
+    const progressWrap = zone.querySelector('.upload-progress');
+    const progressBar  = zone.querySelector('.upload-progress-bar');
+    const defaultLabel = state.mode === 'persist' ? 'Upload to Collection' : 'Upload Document';
+    try {
+      const data = await uploadFile(file, col, zone);
+      if (!state.filesMap[data.collection]) state.filesMap[data.collection] = [];
+      state.filesMap[data.collection].push(data.file);
+      if (state.mode === 'memory') renderMemoryFiles();
+      else renderCollections();
+      addMsg('bot', `Added "${data.file}" to "${data.collection}" (${data.chunks} chunks)`);
+      saveHistory();
+      updateSendBtn();
+    } catch (err) {
+      addMsg('error', err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = defaultLabel;
+      progressWrap.classList.remove('active');
+      progressBar.style.width = '0%';
+    }
+  });
 }
 
 // ── Remove file ───────────────────────────────────────────────────────────────
@@ -575,6 +766,7 @@ async function sendQuery() {
 
   let fullText = '';
   let firstChunk = true;
+  let sources = [];
 
   try {
     const res = await fetch(API + '/api/query/stream', {
@@ -609,31 +801,51 @@ async function sendQuery() {
         if (payload === '[DONE]') break;
         let parsed;
         try { parsed = JSON.parse(payload); } catch { continue; }
-        if (parsed.error) throw new Error(parsed.error);
-        if (parsed.text) {
+        if (parsed.type === 'error') throw new Error(parsed.error);
+        if (parsed.type === 'sources') {
+          sources = parsed.sources || [];
+        }
+        if (parsed.type === 'text') {
           firstChunk = false;
           fullText += parsed.text;
-          // Render markdown progressively, keep cursor at end while streaming
           msgEl.innerHTML = renderMarkdown(fullText) + '<span class="cursor"></span>';
           messagesEl.scrollTop = messagesEl.scrollHeight;
         }
       }
     }
 
-    // Final render without cursor
+    // Final render without cursor + citations + save button
     if (firstChunk) {
       msgEl.textContent = '(no response)';
     } else {
-      msgEl.innerHTML = renderMarkdown(fullText);
+      const capturedQ = q, capturedA = fullText, capturedS = sources;
+      msgEl.innerHTML = renderMarkdown(fullText) + renderSources(sources) +
+        `<button class="save-note-btn" onclick="saveNote(${JSON.stringify(capturedQ)},${JSON.stringify(capturedA)},${JSON.stringify(capturedS)})">💾 Save</button>`;
     }
+    saveHistory();
 
   } catch (err) {
     msgEl.className = 'msg error';
     msgEl.textContent = err.message;
+    saveHistory();
   } finally {
     updateSendBtn();
     input.focus();
   }
+}
+
+function renderSources(sources) {
+  if (!sources || sources.length === 0) return '';
+  const items = sources.map(s => {
+    const file = s.file ? s.file.split('/').pop().split('\\').pop() : 'unknown';
+    const page = s.page != null ? `<span class="source-page">p.${s.page + 1}</span>` : '';
+    const score = `<span class="source-score">${(s.score * 100).toFixed(0)}%</span>`;
+    return `<div class="source-item">
+      <span class="source-file" title="${s.file}">${file}</span>
+      ${page}${score}
+    </div>`;
+  }).join('');
+  return `<div class="sources"><div class="sources-label">Sources</div>${items}</div>`;
 }
 
 // ── Markdown renderer ────────────────────────────────────────────────────────
@@ -728,6 +940,77 @@ function renderMarkdown(text) {
   return out.join('');
 }
 
+// ── Notes ─────────────────────────────────────────────────────────────────────
+
+function toggleNotesPanel() {
+  const panel = document.getElementById('notesPanel');
+  const collapsed = panel.classList.toggle('collapsed');
+  if (!collapsed) loadNotes();
+}
+
+async function loadNotes() {
+  const res = await fetch(API + '/api/notes');
+  if (!res.ok) return;
+  const data = await res.json();
+  renderNotesList(data.notes);
+}
+
+function renderNotesList(notes) {
+  const list = document.getElementById('notesList');
+  document.getElementById('noteDetail').classList.remove('active');
+  list.style.display = '';
+  if (!notes.length) {
+    list.innerHTML = '<div class="note-empty">No saved notes yet.<br>Save a response with the 💾 button.</div>';
+    return;
+  }
+  list.innerHTML = notes.map(n => `
+    <div class="note-card" onclick="viewNote(${n.id})">
+      <button class="note-del" onclick="event.stopPropagation();deleteNote(${n.id})" title="Delete">×</button>
+      <div class="note-title">${escHtml(n.title)}</div>
+      <div class="note-meta">${n.collection} · ${n.role} · ${new Date(n.created_at).toLocaleDateString()}</div>
+    </div>`).join('');
+}
+
+async function viewNote(id) {
+  const res = await fetch(API + '/api/notes/' + id);
+  if (!res.ok) return;
+  const n = await res.json();
+  document.getElementById('notesList').style.display = 'none';
+  const detail = document.getElementById('noteDetail');
+  detail.classList.add('active');
+  document.getElementById('ndMeta').textContent =
+    `${n.collection} · ${n.role} · ${new Date(n.created_at).toLocaleString()}`;
+  document.getElementById('ndQuestion').textContent = n.question;
+  document.getElementById('ndAnswer').innerHTML = renderMarkdown(n.answer);
+}
+
+function showNotesList() {
+  document.getElementById('notesList').style.display = '';
+  document.getElementById('noteDetail').classList.remove('active');
+  loadNotes();
+}
+
+async function deleteNote(id) {
+  if (!confirm('Delete this note?')) return;
+  await fetch(API + '/api/notes/' + id, {method: 'DELETE'});
+  loadNotes();
+}
+
+async function saveNote(question, answer, sources) {
+  const role = document.getElementById('role').value;
+  const collection = state.activeCollection || 'default';
+  const res = await fetch(API + '/api/notes', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({question, answer, sources, collection, role}),
+  });
+  if (res.ok) {
+    const panel = document.getElementById('notesPanel');
+    if (panel.classList.contains('collapsed')) toggleNotesPanel();
+    else loadNotes();
+  }
+}
+
 // ── Utils ─────────────────────────────────────────────────────────────────────
 
 function updateSendBtn() {
@@ -761,7 +1044,80 @@ document.getElementById('questionInput').addEventListener('input', function() {
   this.style.height = Math.min(this.scrollHeight, 120) + 'px';
 });
 
+// ── Chat history (localStorage) ───────────────────────────────────────────────
+
+const HISTORY_KEY = 'docanalyzer_chat_history';
+
+function saveHistory() {
+  const msgs = document.getElementById('messages');
+  // Store each message as {type, html}
+  const items = [...msgs.children].map(el => ({
+    cls: el.className,
+    html: el.innerHTML,
+  }));
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(items)); } catch {}
+}
+
+function restoreHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return;
+    const items = JSON.parse(raw);
+    const msgs = document.getElementById('messages');
+    items.forEach(item => {
+      const div = document.createElement('div');
+      div.className = item.cls;
+      div.innerHTML = item.html;
+      msgs.appendChild(div);
+      msgCounter++;
+      div.id = 'msg-' + msgCounter;
+    });
+    msgs.scrollTop = msgs.scrollHeight;
+  } catch {}
+}
+
+function clearHistory() {
+  localStorage.removeItem(HISTORY_KEY);
+  document.getElementById('messages').innerHTML = '';
+}
+
+// Patch clearAll to also clear history
+const _origClearAll = clearAll;
+async function clearAll() {
+  await _origClearAll();
+  clearHistory();
+}
+
+// ── Export chat ───────────────────────────────────────────────────────────────
+
+function exportChat() {
+  const msgs = document.getElementById('messages');
+  if (!msgs.children.length) return;
+  const lines = [];
+  const now = new Date().toLocaleString();
+  lines.push(`# DocAnalyzer — Chat export\n_${now}_\n`);
+  [...msgs.children].forEach(el => {
+    if (el.classList.contains('user')) {
+      lines.push(`**You:** ${el.textContent.trim()}\n`);
+    } else if (el.classList.contains('bot')) {
+      // strip the save-note button text from export
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('.save-note-btn').forEach(b => b.remove());
+      lines.push(`**Assistant:**\n\n${clone.innerText.trim()}\n`);
+    }
+  });
+  const blob = new Blob([lines.join('\n')], {type: 'text/markdown'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `chat-${Date.now()}.md`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 init();
+
+// Restore history after init so the UI is ready
+restoreHistory();
 </script>
 </body>
 </html>

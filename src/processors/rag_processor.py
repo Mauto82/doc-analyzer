@@ -217,8 +217,12 @@ class RAGProcessor:
         collections: List[str],
         role: str = "default",
         model: Optional[str] = None,
-    ) -> Generator[str, None, None]:
-        """Yield response tokens progressively as the LLM generates them."""
+    ) -> Generator[dict, None, None]:
+        """
+        Yield structured events progressively:
+          {"type": "sources", "sources": [...]}   — emitted once before text
+          {"type": "text",    "text": "token"}    — one per LLM token
+        """
         if role not in prompt_registry:
             raise ValueError(
                 f"Invalid role. Must be one of: {', '.join(prompt_registry.keys())}"
@@ -239,15 +243,26 @@ class RAGProcessor:
                 pass
 
         if not all_points:
-            yield (
+            yield {"type": "text", "text": (
                 "I couldn't find relevant information in the selected collections "
                 "to answer your question. Try rephrasing or uploading more documents."
-            )
+            )}
             return
 
         all_points.sort(key=lambda p: p.score, reverse=True)
-        context = "\n\n".join(p.payload["page_content"] for p in all_points[:4])
+        top = all_points[:4]
 
+        sources = [
+            {
+                "file": p.payload.get("file_name", p.payload.get("source", "unknown")),
+                "page": p.payload.get("page"),
+                "score": round(float(p.score), 3),
+            }
+            for p in top
+        ]
+        yield {"type": "sources", "sources": sources}
+
+        context = "\n\n".join(p.payload["page_content"] for p in top)
         prompt = BASE_PROMPT.format(
             role_prompt=prompt_registry.get_prompt(role),
             context=context,
@@ -261,7 +276,7 @@ class RAGProcessor:
         ):
             content = chunk.message.content
             if content:
-                yield content
+                yield {"type": "text", "text": content}
 
     def query(
         self,
@@ -271,7 +286,11 @@ class RAGProcessor:
         model: Optional[str] = None,
     ) -> str:
         cols = collections if collections is not None else [DEFAULT_COLLECTION]
-        return "".join(self.query_stream(question, cols, role, model))
+        return "".join(
+            item["text"]
+            for item in self.query_stream(question, cols, role, model)
+            if item.get("type") == "text"
+        )
 
     # ── Models ────────────────────────────────────────────────────────────────
 
