@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.7.0] - 2026-04-01
+
+Feature release: importazione di contenuti da URL — pagine web, documentazioni API e trascrizioni di video YouTube (stile NotebookLM).
+
+### Importazione da URL
+
+- Nuovo `src/processors/web_processor.py` — `WebProcessor` con due strategie:
+  - **Pagine web / API docs** — `trafilatura.fetch_url()` + `trafilatura.extract()` con rimozione automatica di boilerplate, navigazione e pubblicità
+  - **YouTube** — rilevamento tramite regex, trascrizione via `youtube-transcript-api` v1.x (nessuna API key, supporta sottotitoli automatici e manuali, fallback `it` → `en` → `en-US` → `en-GB`)
+- Nuovo endpoint `POST /api/import` — accetta `{url, collection}`, deduplicazione identica all'upload file, restituisce `{url, chunks, collection}`
+- UI: campo "Import from URL" + pulsante **Import** aggiunto sotto la upload zone in entrambe le sidebar (Memory e Persist)
+  - Enter per confermare, stato di caricamento sul pulsante (`…`), messaggio di conferma in chat con il numero di chunk prodotti
+  - In Persist mode: input e pulsante disabilitati se nessuna collection è attiva
+
+### Dipendenze aggiunte
+
+- `trafilatura>=1.6.0` — estrazione testo da pagine web
+- `youtube-transcript-api>=1.0.0` — trascrizioni YouTube (aggiornato da `>=0.6.0`: la v1.x ha cambiato l'API da classmethod a istanza)
+
+### Fix API youtube-transcript-api
+
+- Il vecchio `YouTubeTranscriptApi.get_transcript()` (classmethod, v0.x) è stato sostituito con l'API v1.x:
+  - `api = YouTubeTranscriptApi()` → `api.fetch(video_id, languages=[...])`
+  - `s["text"]` → `s.text` (snippet ora sono oggetti con attributi, non dict)
+  - Import: `CouldNotRetrieveTranscript` sostituisce `TranscriptsDisabled` + `NoTranscriptFound`
+
+### Test: da 175 a 205
+
+- `tests/processors/test_web_processor.py` — **18 nuovi test**: `_extract_video_id` (tutti i formati URL YouTube), `_process_webpage` (successo, metadata, errori, testo lungo → multi-chunk), `_process_youtube` (successo, metadata, testo unito, errori, routing)
+- `tests/unit/test_app_import.py` — **12 nuovi test**: successo, collezione named, `file_name` nel metadata, appare in `/api/status`, URL vuota, duplicato, nessun chunk, `ValueError`, `RuntimeError`, campo mancante, 401 senza auth
+
+---
+
 ## [0.6.0] - 2026-04-01
 
 Feature release: autenticazione, citazioni, note, cronologia chat, drag & drop e separazione frontend.
@@ -18,7 +51,7 @@ Feature release: autenticazione, citazioni, note, cronologia chat, drag & drop e
 
 ### Note (SQLite)
 
-- Nuovo `src/models/note.py` — dataclass con `title` auto-generato (primi 80 caratteri della domanda)
+- Nuovo `src/models/note.py` — dataclass con `title` auto-generato (primi 60 caratteri della domanda)
 - Nuovo `src/services/note_service.py` — CRUD su `./data/notes.db` con `sqlite3` built-in (zero nuove dipendenze)
 - 4 nuove route: `POST /api/notes`, `GET /api/notes`, `GET /api/notes/{id}`, `DELETE /api/notes/{id}`
 - UI: pulsante **💾 Save** su ogni risposta bot (visibile a hover), pannello **📓 Notes** collassabile a destra con lista e detail view
