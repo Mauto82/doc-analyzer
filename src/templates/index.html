@@ -203,7 +203,8 @@
                 flex-direction: column; gap: 6px; }
   .note-card { background: var(--surface2); border: 1px solid var(--border);
                border-radius: var(--radius); padding: 10px 12px; cursor: pointer;
-               transition: border-color .15s; position: relative; }
+               transition: border-color .15s; position: relative;
+               overflow: hidden; min-width: 0; }
   .note-card:hover { border-color: var(--accent); }
   .note-card .note-title { font-size: 12px; font-weight: 600; color: var(--text);
                             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -263,6 +264,9 @@
       style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);
              padding:5px 8px;cursor:pointer;font-size:12px;">↻</button>
     <select id="model"></select>
+    <button onclick="clearHistory()" title="Clear chat"
+      style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);
+             padding:5px 10px;cursor:pointer;font-size:12px;">🗑 Chat</button>
     <button onclick="exportChat()" title="Export chat as Markdown"
       style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);
              padding:5px 10px;cursor:pointer;font-size:12px;">⬇ Export</button>
@@ -818,9 +822,9 @@ async function sendQuery() {
     if (firstChunk) {
       msgEl.textContent = '(no response)';
     } else {
-      const capturedQ = q, capturedA = fullText, capturedS = sources;
+      const noteId = _storeNote(q, fullText, sources);
       msgEl.innerHTML = renderMarkdown(fullText) + renderSources(sources) +
-        `<button class="save-note-btn" onclick="saveNote(${JSON.stringify(capturedQ)},${JSON.stringify(capturedA)},${JSON.stringify(capturedS)})">💾 Save</button>`;
+        `<button class="save-note-btn" onclick="saveNote(${noteId})">💾 Save</button>`;
     }
     saveHistory();
 
@@ -996,13 +1000,25 @@ async function deleteNote(id) {
   loadNotes();
 }
 
-async function saveNote(question, answer, sources) {
+// Map<id, {question, answer, sources}> — avoids embedding large JSON in onclick attrs
+const _pendingNotes = new Map();
+let _noteIdCounter = 0;
+
+function _storeNote(question, answer, sources) {
+  const id = ++_noteIdCounter;
+  _pendingNotes.set(id, {question, answer, sources});
+  return id;
+}
+
+async function saveNote(id) {
+  const data = _pendingNotes.get(id);
+  if (!data) return;
   const role = document.getElementById('role').value;
   const collection = state.activeCollection || 'default';
   const res = await fetch(API + '/api/notes', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({question, answer, sources, collection, role}),
+    body: JSON.stringify({...data, collection, role}),
   });
   if (res.ok) {
     const panel = document.getElementById('notesPanel');

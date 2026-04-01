@@ -18,5 +18,5 @@ class Note:
 
     @property
     def title(self) -> str:
-        """First 80 chars of the question, used as display title."""
-        return self.question[:80] + ("…" if len(self.question) > 80 else "")
+        """First 60 chars of the question, used as display title."""
+        return self.question[:60] + ("…" if len(self.question) > 60 else "")
