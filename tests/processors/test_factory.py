@@ -1,11 +1,12 @@
 import pytest
 from pathlib import Path
-from src.processors.factory import ProcessorFactory
+from src.processors.factory import ProcessorFactory, get_processor
 from src.processors.pdf_processor import PDFProcessor
 from src.processors.word_processor import WordProcessor
 from src.processors.text_processor import TextProcessor
 from src.processors.rtf_processor import RtfProcessor
 from src.processors.code_processor import CodeProcessor
+from src.processors.table_processor import TableProcessor
 
 def test_get_processor_pdf():
     # Test PDF processor
@@ -67,9 +68,29 @@ def test_get_processor_with_rtf_file_object():
     assert isinstance(processor, RtfProcessor)
 
 def test_get_processor_with_code_file_object():
-    # Test with file-like object having code file extension
     class MockFile:
         name = "test.py"
 
     processor = ProcessorFactory.get_processor(MockFile())
     assert isinstance(processor, CodeProcessor)
+
+
+# ── Table formats ──────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("ext", [".xlsx", ".xls", ".csv", ".ods", ".json"])
+def test_get_processor_table_formats(ext):
+    processor = get_processor(f"data{ext}")
+    assert isinstance(processor, TableProcessor)
+
+
+# ── Case-insensitive extension matching ────────────────────────────────────────
+
+@pytest.mark.parametrize("filename,expected", [
+    ("REPORT.PDF", PDFProcessor),
+    ("Letter.DOCX", WordProcessor),
+    ("DATA.CSV", TableProcessor),
+    ("Script.PY", CodeProcessor),
+])
+def test_get_processor_case_insensitive(filename, expected):
+    processor = get_processor(filename)
+    assert isinstance(processor, expected)
