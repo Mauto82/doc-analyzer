@@ -6,8 +6,11 @@ import os
 import tempfile
 from typing import List, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+import secrets
+
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pathlib import Path
 
 from fastapi.responses import FileResponse, StreamingResponse
@@ -35,6 +38,21 @@ document_service = DocumentService(rag_processor)
 
 default_model = os.getenv("LLM_MODEL")
 
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+_security = HTTPBasic()
+_APP_USERNAME = os.getenv("APP_USERNAME", "admin")
+_APP_PASSWORD = os.getenv("APP_PASSWORD", "changeme")
+
+
+def require_auth(credentials: HTTPBasicCredentials = Depends(_security)):
+    ok = secrets.compare_digest(credentials.username, _APP_USERNAME) and \
+         secrets.compare_digest(credentials.password, _APP_PASSWORD)
+    if not ok:
+        raise HTTPException(
+            401, "Unauthorized", headers={"WWW-Authenticate": "Basic"}
+        )
+
 
 def _get_available_models() -> List[str]:
     """Fetch models from Ollama and ensure the default model is first."""
@@ -47,7 +65,7 @@ def _get_available_models() -> List[str]:
 # ── Status ────────────────────────────────────────────────────────────────────
 
 @app.get("/api/status")
-def status():
+def status(_: None = Depends(require_auth)):
     return {
         "mode": rag_processor.mode,
         "collections": rag_processor.get_collections(),
@@ -68,7 +86,7 @@ class StorageModeRequest(BaseModel):
 
 
 @app.post("/api/mode")
-def set_mode(req: StorageModeRequest):
+def set_mode(req: StorageModeRequest, _: None = Depends(require_auth)):
     try:
         document_service.switch_mode(req.mode)
     except ValueError as exc:
@@ -86,7 +104,7 @@ def set_mode(req: StorageModeRequest):
 # ── Collections ───────────────────────────────────────────────────────────────
 
 @app.get("/api/collections")
-def get_collections():
+def get_collections(_: None = Depends(require_auth)):
     return {"collections": rag_processor.get_collections()}
 
 
@@ -95,7 +113,7 @@ class CollectionRequest(BaseModel):
 
 
 @app.post("/api/collections")
-def create_collection(req: CollectionRequest):
+def create_collection(req: CollectionRequest, _: None = Depends(require_auth)):
     name = req.name.strip()
     if not name:
         raise HTTPException(400, "Collection name cannot be empty")
@@ -104,7 +122,7 @@ def create_collection(req: CollectionRequest):
 
 
 @app.delete("/api/collections/{name}")
-def delete_collection(name: str):
+def delete_collection(name: str, _: None = Depends(require_auth)):
     document_service.delete_collection(name)
     return {"deleted": name, "collections": rag_processor.get_collections()}
 
@@ -112,7 +130,7 @@ def delete_collection(name: str):
 # ── Prompts ───────────────────────────────────────────────────────────────────
 
 @app.post("/api/prompts/reload")
-def reload_prompts():
+def reload_prompts(_: None = Depends(require_auth)):
     """Re-scan src/prompts/ and return the updated role list. No restart needed."""
     prompt_registry.reload()
     return {"roles": prompt_registry.as_api_list()}
@@ -124,6 +142,7 @@ def reload_prompts():
 async def upload_file(
     file: UploadFile = File(...),
     collection: str = Form(DEFAULT_COLLECTION),
+    _: None = Depends(require_auth),
 ):
     name = file.filename
     if document_service.is_duplicate(name, collection):
@@ -161,7 +180,7 @@ async def upload_file(
 # ── Remove file ───────────────────────────────────────────────────────────────
 
 @app.delete("/api/collections/{collection}/files/{file_name}")
-def remove_file(collection: str, file_name: str):
+def remove_file(collection: str, file_name: str, _: None = Depends(require_auth)):
     ok = document_service.remove_file(file_name, collection)
     if not ok:
         raise HTTPException(404, f"'{file_name}' not found in collection '{collection}'")
@@ -171,7 +190,7 @@ def remove_file(collection: str, file_name: str):
 # ── Clear all ─────────────────────────────────────────────────────────────────
 
 @app.delete("/api/files")
-def clear_all():
+def clear_all(_: None = Depends(require_auth)):
     document_service.clear_all()
     return {"cleared": True}
 
@@ -186,7 +205,7 @@ class QueryRequest(BaseModel):
 
 
 @app.post("/api/query")
-def query(req: QueryRequest):
+def query(req: QueryRequest, _: None = Depends(require_auth)):
     if not req.question.strip():
         raise HTTPException(400, "Empty question")
     if not document_service.has_documents():
@@ -202,7 +221,7 @@ def query(req: QueryRequest):
 
 
 @app.post("/api/query/stream")
-def query_stream(req: QueryRequest):
+def query_stream(req: QueryRequest, _: None = Depends(require_auth)):
     if not req.question.strip():
         raise HTTPException(400, "Empty question")
     if not document_service.has_documents():
