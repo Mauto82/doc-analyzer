@@ -837,7 +837,7 @@ async function sendQuery() {
       const {done, value} = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, {stream: true});
-      const lines = buffer.split('\\n');
+      const lines = buffer.split('\n');
       buffer = lines.pop();
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
@@ -888,7 +888,7 @@ function renderMarkdown(text) {
     return s;
   }
 
-  const lines = text.split('\\n');
+  const lines = text.split('\n');
   const out = [];
   let i = 0;
 
@@ -903,7 +903,7 @@ function renderMarkdown(text) {
         codeLines.push(esc(lines[i]));
         i++;
       }
-      out.push(`<pre><code>${codeLines.join('\\n')}</code></pre>`);
+      out.push(`<pre><code>${codeLines.join('\n')}</code></pre>`);
       i++;
       continue;
     }
