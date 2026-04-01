@@ -9,6 +9,7 @@ Doc Analyzer enables you to:
 - Process **30+ code file formats** (Python, JS, Java, Go, Rust, and more)
 - Handle **tabular data** (Excel, CSV, ODS, JSON)
 - Process **Markdown** and **YAML** files
+- **Import web pages, API documentation, and YouTube video transcripts** directly from a URL — NotebookLM-style
 - Organize documents into **named collections** and query across multiple collections simultaneously
 - Switch between **in-memory** (volatile) and **persistent** storage from the UI
 - Ask questions and get **streaming AI responses** with **source citations** rendered in Markdown
@@ -61,6 +62,7 @@ doc-analyzer/
 │       ├── rtf_processor.py
 │       ├── code_processor.py
 │       ├── table_processor.py
+│       ├── web_processor.py            # Web pages, API docs, YouTube transcripts
 │       └── rag_processor.py            # Qdrant + Ollama RAG engine
 ├── tests/
 │   ├── processors/
@@ -156,6 +158,7 @@ CHUNK_OVERLAP=200
 | `POST` | `/api/collections` | Create a collection |
 | `DELETE` | `/api/collections/{name}` | Delete a collection |
 | `POST` | `/api/upload` | Upload and index a document (form field: `collection`) |
+| `POST` | `/api/import` | Import content from a URL (web page, API docs, YouTube) |
 | `DELETE` | `/api/collections/{col}/files/{file}` | Remove a file from a collection |
 | `DELETE` | `/api/files` | Clear all documents |
 | `POST` | `/api/query` | Query (full response) |
@@ -198,8 +201,11 @@ Python, JavaScript, TypeScript, Java, C/C++, C#, PHP, Go, Ruby, Rust, HTML, CSS,
 **Persist mode**: toggle the switch in the header to enable. Documents are saved to disk and survive restarts. You can create named collections to organize documents by topic, project, or type.
 
 1. **Upload documents** — click "Upload Document". In persist mode, select the target collection first.
-2. **Query across collections** — use the checkboxes to select which collections to include in the search.
-3. **Remove documents** — click `×` next to a file, or "Clear All" to reset everything.
+2. **Import from URL** — paste any URL in the "Import from URL" field and press Enter or click Import:
+   - **Web pages / API docs** — text is extracted with [trafilatura](https://trafilatura.readthedocs.io/), removing boilerplate and ads
+   - **YouTube videos** — the transcript is fetched automatically (no API key required). Works with both auto-generated and manual subtitles
+3. **Query across collections** — use the checkboxes to select which collections to include in the search.
+4. **Remove documents** — click `×` next to a file, or "Clear All" to reset everything.
 
 ### Chat
 
@@ -263,6 +269,9 @@ Auto-discovers `*.md` files from `src/prompts/`, parses display name from the fi
 ### PDF Processor (`pdf_processor.py`)
 Extracts text with PyMuPDF (`fitz`). If a page returns no text (scanned PDF or vector-path text), falls back to OCR: renders at 300 DPI and runs `pytesseract.image_to_string()`.
 
+### Web Processor (`web_processor.py`)
+Handles URL-based import. Detects YouTube URLs via regex and fetches the transcript using `youtube-transcript-api` (v1.x instance API, no API key required, falls back across `it`/`en`/`en-US`/`en-GB`). For all other URLs, fetches and cleans the page with `trafilatura`. Both paths produce `Document` chunks fed through the standard text splitter.
+
 ### Factory (`factory.py`)
 Extension → processor class registry (`dict`). Adding support for a new format is one line. Falls back to `CodeProcessor` for 40+ code extensions and Dockerfiles without extension.
 
@@ -277,7 +286,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-175 tests covering: RAG processor (including sources events and truncation logic), document service, note service, prompt registry, all processors, API endpoints (upload, collections, streaming, notes).
+205 tests covering: RAG processor (including sources events and truncation logic), document service, note service, prompt registry, all processors (including WebProcessor), API endpoints (upload, URL import, collections, streaming, notes).
 
 ## Troubleshooting
 
