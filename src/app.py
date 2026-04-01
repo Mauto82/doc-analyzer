@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from src.config.prompts import registry as prompt_registry
 from src.processors.factory import get_processor
 from src.processors.rag_processor import DEFAULT_COLLECTION, RAGProcessor
+from src.processors.web_processor import WebProcessor
 from src.services.document_service import DocumentService
 from src.services.note_service import NoteService
 
@@ -136,6 +137,45 @@ def reload_prompts(_: None = Depends(require_auth)):
     """Re-scan src/prompts/ and return the updated role list. No restart needed."""
     prompt_registry.reload()
     return {"roles": prompt_registry.as_api_list()}
+
+
+# ── Import from URL ───────────────────────────────────────────────────────────
+
+class ImportRequest(BaseModel):
+    url: str
+    collection: str = DEFAULT_COLLECTION
+
+
+@app.post("/api/import")
+def import_url(req: ImportRequest, _: None = Depends(require_auth)):
+    url = req.url.strip()
+    if not url:
+        raise HTTPException(400, "URL cannot be empty")
+
+    # Use the URL as the document name for deduplication
+    name = url
+    if document_service.is_duplicate(name, req.collection):
+        raise HTTPException(400, f"'{url}' is already in collection '{req.collection}'")
+
+    try:
+        processor = WebProcessor()
+        chunks = processor.process_url(url)
+
+        if not chunks:
+            raise HTTPException(422, f"No content extracted from '{url}'")
+
+        for chunk in chunks:
+            chunk.metadata["file_name"] = name
+
+        n_chunks = document_service.add_file(name, chunks, req.collection)
+        return {"url": url, "chunks": n_chunks, "collection": req.collection}
+
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except Exception as exc:
+        raise HTTPException(500, f"Error importing '{url}': {exc}")
 
 
 # ── Upload ────────────────────────────────────────────────────────────────────

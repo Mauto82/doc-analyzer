@@ -62,6 +62,21 @@
   .upload-progress-bar { height: 100%; background: var(--accent); width: 0%;
                           transition: width .1s linear; border-radius: 2px; }
 
+  /* ── URL import zone ── */
+  .url-import { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .url-import-label { font-size: 10px; font-weight: 600; color: var(--muted);
+                      text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px; }
+  .url-import-row { display: flex; gap: 6px; }
+  .url-import-row input[type=text] { flex: 1; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 9px; font-size: 12px; outline: none; min-width: 0; }
+  .url-import-row input[type=text]:focus { border-color: var(--accent); }
+  .url-import-row button { background: var(--accent2); color: #fff; border: none;
+    border-radius: 6px; padding: 6px 11px; cursor: pointer; font-size: 12px;
+    font-weight: 500; white-space: nowrap; transition: opacity .15s; flex-shrink: 0; }
+  .url-import-row button:hover:not(:disabled) { opacity: .85; }
+  .url-import-row button:disabled { opacity: .4; cursor: not-allowed; }
+
   /* Collection selector for upload (persist mode) */
   .upload-target { display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
                    font-size: 12px; color: var(--muted); }
@@ -291,6 +306,14 @@
           <div class="upload-progress-bar" id="progressBarMemory"></div>
         </div>
       </div>
+      <div class="url-import" id="urlImportMemory">
+        <div class="url-import-label">Import from URL</div>
+        <div class="url-import-row">
+          <input type="text" id="urlInputMemory" placeholder="https:// or YouTube link…"
+                 onkeydown="if(event.key==='Enter')importUrl('default','Memory')">
+          <button id="urlBtnMemory" onclick="importUrl('default','Memory')">Import</button>
+        </div>
+      </div>
       <div class="file-list" id="memoryFileList">
         <div class="empty-msg">No documents loaded</div>
       </div>
@@ -329,6 +352,14 @@
         </button>
         <div class="upload-progress" id="progressPersist">
           <div class="upload-progress-bar" id="progressBarPersist"></div>
+        </div>
+      </div>
+      <div class="url-import" id="urlImportPersist">
+        <div class="url-import-label">Import from URL</div>
+        <div class="url-import-row">
+          <input type="text" id="urlInputPersist" placeholder="https:// or YouTube link…"
+                 onkeydown="if(event.key==='Enter')importUrl(state.activeCollection,'Persist')">
+          <button id="urlBtnPersist" onclick="importUrl(state.activeCollection,'Persist')">Import</button>
         </div>
       </div>
       <div class="file-list" id="persistFileList">
@@ -522,6 +553,8 @@ function renderCollections() {
   document.getElementById('activeColLabel').textContent = state.activeCollection || '—';
   const uploadBtn = document.getElementById('uploadBtnPersist');
   uploadBtn.disabled = !state.activeCollection;
+  document.getElementById('urlBtnPersist').disabled = !state.activeCollection;
+  document.getElementById('urlInputPersist').disabled = !state.activeCollection;
 }
 
 function renderPersistFiles() {
@@ -663,6 +696,48 @@ async function handleUpload(input, collection) {
 async function handleUploadPersist(input) {
   if (!state.activeCollection) { addMsg('error', 'Select a collection first'); input.value = ''; return; }
   await handleUpload(input, state.activeCollection);
+}
+
+// ── URL Import ────────────────────────────────────────────────────────────────
+
+async function importUrl(collection, suffix) {
+  const inputEl = document.getElementById('urlInput' + suffix);
+  const btnEl   = document.getElementById('urlBtn'   + suffix);
+  const url = inputEl.value.trim();
+  if (!url) { inputEl.focus(); return; }
+
+  if (suffix === 'Persist' && !collection) {
+    addMsg('error', 'Select a collection first');
+    return;
+  }
+
+  btnEl.disabled = true;
+  btnEl.textContent = '…';
+
+  try {
+    const res = await fetch(API + '/api/import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ url, collection: collection || 'default' }),
+    });
+    const data = await res.json();
+    if (!res.ok) { addMsg('error', data.detail || 'Import failed'); return; }
+
+    const col = data.collection;
+    if (!state.filesMap[col]) state.filesMap[col] = [];
+    state.filesMap[col].push(data.url);
+    if (state.mode === 'memory') renderMemoryFiles();
+    else renderCollections();
+    addMsg('bot', `Imported "${data.url}" into "${col}" (${data.chunks} chunks)`);
+    saveHistory();
+    updateSendBtn();
+    inputEl.value = '';
+  } catch (err) {
+    addMsg('error', err.message);
+  } finally {
+    btnEl.disabled = false;
+    btnEl.textContent = 'Import';
+  }
 }
 
 // ── Drag & drop ───────────────────────────────────────────────────────────────
