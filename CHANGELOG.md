@@ -2,12 +2,17 @@
 
 ## [0.9.0] - 2026-10-15
 
-Feature release: **Auto mode** — router che sceglie standard o deep mode in base alla domanda.
+Feature release: **Auto mode** — router ibrido (regex + embedding) che sceglie standard o deep mode in base alla domanda.
 
 ### Router
 
 - Nuovo `src/services/query_router.py` — `route_question()` basato su regole (italiano e inglese), deterministico e istantaneo, senza chiamate LLM aggiuntive. Instrada su deep le domande di tipo riassunto, conteggio, confronto, elenco esaustivo e documento intero; tutto il resto su standard
   - Gestiti i falsi positivi tipici: "compare" italiano (= appare), "all'articolo", "contatore"/"account", domande sì/no come "tutti i dati sono cifrati?"
+- **Secondo parere con embedding** — `EmbeddingRouter`: quando nessuna regola scatta, confronta l'embedding della domanda con 60 domande di esempio divise per categoria (media dei 3 esempi più vicini). Va su deep solo se la categoria deep migliore supera `ROUTER_MIN_SIMILARITY` e batte gli esempi puntuali di `ROUTER_MARGIN`. Riconosce parafrasi e altre lingue
+  - Costo nullo a regime: l'embedding della domanda viene riusato dal retrieval standard (`query_stream(query_embedding=…)`); gli esempi vengono calcolati una volta sola al primo uso (~0.8s)
+  - Calibrazione su `mxbai-embed-large`, 36 domande escluse dagli esempi: margin 0.06 → 10/18 domande aggregate su deep, 0/18 puntuali su deep
+  - Nuovo `scripts/calibrate_router.py` per ricalibrare dopo un cambio di `EMBEDDING_MODEL`
+  - Configurazione: `ROUTER_EMBEDDINGS`, `ROUTER_MIN_SIMILARITY`, `ROUTER_MARGIN`
 - Nuovo `RAGProcessor.query_stream_auto()` — emette `{"type": "route", "mode", "reason"}` e delega; se i documenti superano `DEEP_MAX_BLOCKS` ripiega su standard invece di dare errore
 - `query_stream_deep()` diviso in controllo dimensione + `_deep_stream()`, così auto riusa i blocchi già calcolati
 - API: nuovo campo `mode` (`standard` | `deep` | `auto`) su `/api/query` e `/api/query/stream`; `deep: true` resta supportato come alias di `mode: deep`. Modalità non valide → 422
@@ -17,10 +22,11 @@ Feature release: **Auto mode** — router che sceglie standard o deep mode in ba
 - Il checkbox **Deep** diventa un selettore **Auto / Standard / Deep** (default Auto). La preferenza precedente "Deep attivo" viene migrata
 - Ogni risposta in Auto mostra percorso e motivo, es. *Deep · auto: exhaustive list*
 
-### Test: da 241 a 279
+### Test: da 241 a 289
 
 - `tests/unit/test_query_router.py` — **29 casi** (18 deep con motivo atteso, 11 standard inclusi i falsi positivi)
 - **6 nuovi test** su `query_stream_auto` e `query(mode=…)`, **3 nuovi test** endpoint (auto, precedenza di `mode` su `deep`, modalità non valida)
+- **10 nuovi test** sul router embedding: categoria più vicina, margin, similarità minima, cache degli esempi, coseno su vettori non normalizzati, integrazione in auto (secondo parere, riuso dell'embedding, salto quando una regola scatta)
 
 ---
 

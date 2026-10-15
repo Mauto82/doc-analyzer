@@ -15,7 +15,7 @@ from src.config.prompts import (
     registry as prompt_registry,
 )
 from src.models.document import Document
-from src.services.query_router import Route, route_question
+from src.services.query_router import EmbeddingRouter, Route, route_question
 
 DEFAULT_COLLECTION = "default"
 
@@ -44,6 +44,9 @@ class RAGProcessor:
         deep_max_blocks: int = 60,
         deep_max_workers: int = 2,
         deep_max_reduce_depth: int = 4,
+        router_embeddings: bool = True,
+        router_min_similarity: float = 0.5,
+        router_margin: float = 0.06,
     ) -> None:
         self.model_name = model_name
         self.embedding_model = embedding_model
@@ -59,6 +62,12 @@ class RAGProcessor:
         self._deep_max_blocks = deep_max_blocks
         self._deep_max_workers = deep_max_workers
         self._deep_max_reduce_depth = deep_max_reduce_depth
+        # Second opinion for auto mode when no regex rule fires. Thresholds are
+        # calibrated for mxbai-embed-large (scripts/calibrate_router.py).
+        self._embedding_router = (
+            EmbeddingRouter(self._get_embeddings, router_min_similarity, router_margin)
+            if router_embeddings else None
+        )
 
     # ── Factory ───────────────────────────────────────────────────────────────
 
@@ -86,6 +95,9 @@ class RAGProcessor:
             deep_block_chars=int(os.getenv("DEEP_BLOCK_CHARS", "10000")),
             deep_max_blocks=int(os.getenv("DEEP_MAX_BLOCKS", "60")),
             deep_max_workers=int(os.getenv("DEEP_MAX_WORKERS", "2")),
+            router_embeddings=os.getenv("ROUTER_EMBEDDINGS", "true").lower() != "false",
+            router_min_similarity=float(os.getenv("ROUTER_MIN_SIMILARITY", "0.5")),
+            router_margin=float(os.getenv("ROUTER_MARGIN", "0.06")),
         )
 
     # ── Storage mode ──────────────────────────────────────────────────────────
@@ -263,16 +275,21 @@ class RAGProcessor:
         collections: List[str],
         role: str = "default",
         model: Optional[str] = None,
+        query_embedding: Optional[List[float]] = None,
     ) -> Generator[dict, None, None]:
         """
         Yield structured events progressively:
           {"type": "sources", "sources": [...]}   — emitted once before text
           {"type": "text",    "text": "token"}    — one per LLM token
+
+        query_embedding: pass it when already computed (auto mode) to skip
+        embedding the question twice.
         """
         self._check_role(role)
 
         query_model = model or self.model_name
-        query_embedding = self._embed_single(question)
+        if query_embedding is None:
+            query_embedding = self._embed_single(question)
 
         # Gather candidates from all requested collections, then keep global top-4
         all_points = []
@@ -367,10 +384,17 @@ class RAGProcessor:
         Route the question to standard or deep mode (see query_router), then
         delegate. Emits first:
           {"type": "route", "mode": "standard"|"deep", "reason": str}
-        Falls back to standard when the documents exceed DEEP_MAX_BLOCKS.
+        Regex rules decide first; when none fires, the embedding router gives a
+        second opinion using the question embedding, which is then reused for
+        standard retrieval. Falls back to standard when the documents exceed
+        DEEP_MAX_BLOCKS.
         """
         self._check_role(role)
         route = route_question(question)
+        query_embedding = None
+        if route.mode == "standard" and self._embedding_router is not None:
+            query_embedding = self._embed_single(question)
+            route = self._embedding_router.classify(query_embedding) or route
         if route.mode == "deep":
             blocks = self._build_blocks(collections)
             if len(blocks) <= self._deep_max_blocks:
@@ -379,7 +403,9 @@ class RAGProcessor:
                 return
             route = Route("standard", f"too large for deep mode ({len(blocks)} blocks)")
         yield {"type": "route", "mode": "standard", "reason": route.reason}
-        yield from self.query_stream(question, collections, role, model)
+        yield from self.query_stream(
+            question, collections, role, model, query_embedding=query_embedding
+        )
 
     def _deep_stream(
         self,

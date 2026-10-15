@@ -3,6 +3,7 @@ import pytest
 from unittest.mock import MagicMock
 from src.processors.rag_processor import RAGProcessor, DEFAULT_COLLECTION
 from src.models.document import Document
+from src.services.query_router import Route
 
 
 def _point(content, file_name="doc.pdf", chunk_index=None, page=None):
@@ -53,7 +54,7 @@ def _make_rag(points, map_reply=lambda prompt: "- fact", block_chars=100, **kwar
         qdrant_path="./data/test",
         deep_block_chars=block_chars,
         deep_max_workers=2,
-        **kwargs,
+        **{"router_embeddings": False, **kwargs},
     )
 
 
@@ -233,3 +234,49 @@ def test_query_invalid_mode():
     rag = _make_rag([_point("x")])
     with pytest.raises(ValueError, match="Invalid mode"):
         rag.query("q", mode="turbo")
+
+
+def test_auto_uses_embedding_router_when_no_rule_fires():
+    rag = _make_rag([_point("x")], router_embeddings=True)
+    rag._embedding_router = MagicMock()
+    rag._embedding_router.classify.return_value = Route("deep", "similar to list")
+    rag._embed_single = MagicMock(return_value=[0.1, 0.2])
+
+    events = list(rag.query_stream_auto("Che scadenze ci sono?", [DEFAULT_COLLECTION]))
+
+    rag._embedding_router.classify.assert_called_once_with([0.1, 0.2])
+    assert events[0] == {"type": "route", "mode": "deep", "reason": "similar to list"}
+    assert len(_map_prompts(rag)) == 1
+
+
+def test_auto_reuses_question_embedding_for_standard():
+    rag = _make_rag([_point("x")], router_embeddings=True)
+    rag._embedding_router = MagicMock()
+    rag._embedding_router.classify.return_value = None
+    rag._embed_single = MagicMock(return_value=[0.1, 0.2])
+    rag.query_stream = MagicMock(return_value=iter([]))
+
+    events = list(rag.query_stream_auto("Chi è il fornitore?", [DEFAULT_COLLECTION]))
+
+    assert events[0]["reason"] == "targeted question"
+    assert rag._embed_single.call_count == 1
+    assert rag.query_stream.call_args.kwargs["query_embedding"] == [0.1, 0.2]
+
+
+def test_auto_skips_embedding_router_when_rule_fires():
+    rag = _make_rag([_point("x")], router_embeddings=True)
+    rag._embedding_router = MagicMock()
+
+    list(rag.query_stream_auto("Riassumi il documento", [DEFAULT_COLLECTION]))
+
+    rag._embedding_router.classify.assert_not_called()
+
+
+def test_query_stream_uses_given_embedding():
+    rag = _make_rag([])
+    rag.qdrant.query_points.return_value = MagicMock(points=[])
+
+    list(rag.query_stream("q", [DEFAULT_COLLECTION], query_embedding=[0.3]))
+
+    rag.ollama_client.embed.assert_not_called()
+    assert rag.qdrant.query_points.call_args.kwargs["query"] == [0.3]

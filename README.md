@@ -151,6 +151,11 @@ CHUNK_OVERLAP=200
 DEEP_BLOCK_CHARS=10000   # characters per block sent to the LLM; keep under the model's num_ctx
 DEEP_MAX_BLOCKS=60       # refuse deep queries over more blocks than this
 DEEP_MAX_WORKERS=2       # parallel LLM calls; match OLLAMA_NUM_PARALLEL
+
+# Auto mode embedding router (optional — defaults calibrated for mxbai-embed-large)
+ROUTER_EMBEDDINGS=true       # false = regex rules only
+ROUTER_MIN_SIMILARITY=0.5
+ROUTER_MARGIN=0.06
 ```
 
 > **Docker note:** `docker-compose.yml` automatically overrides `OLLAMA_HOST` to `host.docker.internal` so the container can reach Ollama on the host machine.
@@ -243,7 +248,10 @@ Sources list each file that contributed, with the number of relevant blocks; the
 
 ### Auto mode
 
-Auto mode (the UI default) picks the pipeline from the wording of the question, in Italian or English. Rules are deterministic and instant: no extra LLM call.
+Auto mode (the UI default) picks the pipeline from the question in two steps, with no extra LLM call:
+
+1. **Regex rules** (Italian and English): deterministic and instant, they catch the common phrasings below.
+2. **Embedding router**, only when no rule fires: the question embedding (already computed for retrieval, so no extra cost) is compared with 60 example questions split across categories (`query_router.EXEMPLARS`). The score per category is the mean cosine similarity of its 3 closest examples. The question goes to deep only if the best deep category scores at least `ROUTER_MIN_SIMILARITY` **and** beats the targeted examples by `ROUTER_MARGIN`. This catches paraphrases ("what deadlines are there?") and other languages.
 
 | Route | Triggered by | Example |
 |-------|--------------|---------|
@@ -254,9 +262,15 @@ Auto mode (the UI default) picks the pipeline from the wording of the question, 
 | Deep · whole document | in tutto il documento, entire document | "Quali rischi in tutto il documento?" |
 | Standard | anything else | "Cosa dice l'articolo 5?" |
 
-Each answer shows the chosen route and its reason (e.g. *Deep · auto: exhaustive list*). If the router is wrong, pick Standard or Deep explicitly. When deep is chosen but the documents exceed `DEEP_MAX_BLOCKS`, auto falls back to standard instead of failing.
+Each answer shows the chosen route and its reason: *Deep · auto: exhaustive list* for a rule, *Deep · auto: similar to list* for the embedding router. If the router is wrong, pick Standard or Deep explicitly. When deep is chosen but the documents exceed `DEEP_MAX_BLOCKS`, auto falls back to standard instead of failing.
 
-Known trade-off: the rules favour precision on common phrasings. Unusual wording of an aggregation question ("what deadlines does the contract set?") stays on standard; use Deep explicitly for those. Rules live in `src/services/query_router.py` and are covered by `tests/unit/test_query_router.py`.
+**Calibration.** The defaults favour precision: a wrong deep route costs minutes, a missed one only an incomplete answer. On 36 held-out questions (not among the examples, all left on standard by the regex rules) with `mxbai-embed-large`, margin 0.06 sends 10 of 18 aggregation questions to deep and none of the 18 targeted ones. Similarities depend on the embedding model, so after changing `EMBEDDING_MODEL` run:
+
+```bash
+python scripts/calibrate_router.py
+```
+
+It prints the scores and suggests `ROUTER_MARGIN` and `ROUTER_MIN_SIMILARITY`. Rules and examples live in `src/services/query_router.py`, covered by `tests/unit/test_query_router.py`.
 
 ### Notes
 
@@ -299,7 +313,7 @@ Centralises all document state and orchestration. FastAPI routes are thin HTTP a
 - Stores vectors in Qdrant (cosine distance, configurable dimensions via `EMBEDDING_VECTOR_SIZE`)
 - On query: embeds the question, retrieves top-4 chunks per collection, merges and re-ranks globally, streams the answer via `ollama.Client.chat(stream=True)`
 - `query_stream()` emits structured events: `{"type":"sources", "sources":[...]}` first, then `{"type":"text", "text":"token"}` — the frontend renders citations and text separately
-- `query_stream_auto()` routes via `query_router.route_question()`, emits `{"type":"route", "mode", "reason"}` and delegates to the standard or deep stream
+- `query_stream_auto()` routes via `query_router.route_question()` and, when no rule fires, `EmbeddingRouter.classify()` on the question embedding (then reused for retrieval); emits `{"type":"route", "mode", "reason"}` and delegates to the standard or deep stream
 - `query_stream_deep()` implements deep mode: rebuilds files from Qdrant payloads (ordered by `chunk_index`, stored at indexing time; older chunks fall back to page order), maps every block, reduces recursively and streams the answer. It also emits `{"type":"progress", "stage":"map"|"reduce", "done":n, "total":m}`
 - Automatic retry with progressive truncation (configurable via `EMBEDDING_TRUNCATION_FACTOR` and `EMBEDDING_MAX_TRUNCATION_ATTEMPTS`) when a chunk exceeds the embedding model's context length
 
@@ -331,7 +345,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-279 tests covering: RAG processor (including sources events, truncation logic and deep mode), document service, note service, prompt registry, all processors (including WebProcessor), API endpoints (upload, URL import, collections, streaming, notes).
+289 tests covering: RAG processor (including sources events, truncation logic and deep mode), document service, note service, prompt registry, all processors (including WebProcessor), API endpoints (upload, URL import, collections, streaming, notes).
 
 ## Troubleshooting
 

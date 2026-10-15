@@ -51,3 +51,60 @@ def test_routes_to_standard(question):
     route = route_question(question)
     assert route.mode == "standard"
     assert route.reason == "targeted question"
+
+
+# ── EmbeddingRouter ────────────────────────────────────────────────────────────
+
+from src.services.query_router import EmbeddingRouter, Route
+
+# Orthogonal toy vectors per category so similarities are easy to reason about
+_AXES = {"summary": [1, 0, 0], "list": [0, 1, 0], "targeted": [0, 0, 1]}
+_EXEMPLARS = {cat: [f"{cat} {i}" for i in range(3)] for cat in _AXES}
+
+
+def _router(**kwargs):
+    calls = []
+
+    def embed(texts):
+        calls.append(list(texts))
+        return [_AXES[t.split()[0]] for t in texts]
+
+    router = EmbeddingRouter(embed, exemplars=_EXEMPLARS,
+                             **{"min_similarity": 0.5, "margin": 0.06, **kwargs})
+    return router, calls
+
+
+def test_embedding_router_picks_closest_deep_category():
+    router, _ = _router()
+    assert router.classify([0.9, 0.1, 0.1]) == Route("deep", "similar to summary")
+
+
+def test_embedding_router_none_when_closer_to_targeted():
+    router, _ = _router()
+    assert router.classify([0.1, 0.1, 0.9]) is None
+
+
+def test_embedding_router_requires_margin():
+    router, _ = _router(margin=0.2)
+    # summary barely beats targeted: below the margin → no opinion
+    assert router.classify([0.55, 0, 0.5]) is None
+
+
+def test_embedding_router_requires_min_similarity():
+    router, _ = _router(min_similarity=0.9)
+    # split between summary and list: ~0.70 each, below 0.9
+    assert router.classify([0.6, 0.6, 0.1]) is None
+
+
+def test_embedding_router_embeds_examples_once():
+    router, calls = _router()
+    router.classify([1, 0, 0])
+    router.classify([0, 1, 0])
+    assert len(calls) == 1
+    assert len(calls[0]) == 9
+
+
+def test_embedding_router_scores_are_cosine():
+    router, _ = _router()
+    scores = router.scores([2, 0, 0])  # unnormalised input
+    assert scores == pytest.approx({"summary": 1.0, "list": 0.0, "targeted": 0.0})
