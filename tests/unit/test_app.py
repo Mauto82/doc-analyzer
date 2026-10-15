@@ -1,6 +1,5 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
@@ -12,7 +11,7 @@ def mock_env(monkeypatch):
 
 
 @pytest.fixture
-def client():
+def client(make_client):
     with patch("src.processors.rag_processor.ollama.Client") as mock_ollama, \
          patch("src.processors.rag_processor.QdrantClient") as mock_qdrant:
 
@@ -29,7 +28,7 @@ def client():
         # Reset service state between tests
         src.app.document_service._files_map = {}
 
-        yield TestClient(src.app.app)
+        yield make_client(src.app.app)
 
 
 def test_index(client):

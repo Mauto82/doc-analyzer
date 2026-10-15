@@ -1,10 +1,9 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def app_with_mocks(monkeypatch):
+def app_with_mocks(monkeypatch, make_client):
     monkeypatch.setenv("LLM_MODEL", "test-model")
     monkeypatch.setenv("OLLAMA_HOST", "localhost")
     monkeypatch.setenv("OLLAMA_PORT", "11434")
@@ -45,7 +44,7 @@ def app_with_mocks(monkeypatch):
         mock_factory.return_value = mock_processor
 
         with patch.object(src.app, "get_processor", mock_factory):
-            yield TestClient(src.app.app), mock_rag
+            yield make_client(src.app.app), mock_rag
 
 
 def test_add_and_remove_file(app_with_mocks):

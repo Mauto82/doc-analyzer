@@ -7,6 +7,29 @@ import pytest
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
+# Credentials the app is configured with during tests (see test_credentials).
+TEST_AUTH = ("test-user", "test-pass")
+
+
+@pytest.fixture(autouse=True)
+def test_credentials(monkeypatch):
+    """
+    Pin APP_USERNAME / APP_PASSWORD before src.app is reloaded, so tests never
+    depend on the developer's .env (load_dotenv does not override set vars).
+    """
+    monkeypatch.setenv("APP_USERNAME", TEST_AUTH[0])
+    monkeypatch.setenv("APP_PASSWORD", TEST_AUTH[1])
+
+
+@pytest.fixture
+def make_client():
+    """Return a factory building a TestClient that sends the test credentials."""
+    def _make(app):
+        client = TestClient(app)
+        client.auth = TEST_AUTH
+        return client
+    return _make
+
 
 def _make_mock_rag():
     mock = MagicMock()
@@ -28,7 +51,7 @@ def _make_mock_processor(chunks=None):
 
 
 @pytest.fixture
-def app_client(monkeypatch):
+def app_client(monkeypatch, make_client):
     """
     TestClient with ollama and qdrant patched out.
     Yields (client, mock_rag, mock_get_processor).
@@ -56,4 +79,4 @@ def app_client(monkeypatch):
         mock_get_processor = MagicMock(return_value=_make_mock_processor())
 
         with patch.object(src.app, "get_processor", mock_get_processor):
-            yield TestClient(src.app.app), mock_rag, mock_get_processor
+            yield make_client(src.app.app), mock_rag, mock_get_processor
