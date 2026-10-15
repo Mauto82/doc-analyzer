@@ -185,13 +185,11 @@ class TestProcessYoutube:
 
     def test_could_not_retrieve_raises_value_error(self):
         wp = self._make_wp()
-        mods, CouldNotRetrieveTranscript = _make_yt_modules(
-            error=None  # will be set below after we have the class
-        )
-        # Rebuild with the actual error class as the side_effect
-        mods, CouldNotRetrieveTranscript = _make_yt_modules(
-            error=mods["youtube_transcript_api._errors"].CouldNotRetrieveTranscript("disabled")
-        )
+        mods, CouldNotRetrieveTranscript = _make_yt_modules()
+        # Raise the same class the fake _errors module exposes, so the
+        # processor's `except CouldNotRetrieveTranscript` matches it
+        api_instance = mods["youtube_transcript_api"].YouTubeTranscriptApi.return_value
+        api_instance.fetch.side_effect = CouldNotRetrieveTranscript("disabled")
         with patch.dict("sys.modules", mods):
             with pytest.raises(ValueError, match="No transcript available"):
                 wp._process_youtube(self._YT_URL, "dQw4w9WgXcQ")
