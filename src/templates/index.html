@@ -25,6 +25,11 @@
                   border-radius: var(--radius); padding: 5px 10px; font-size: 13px; }
 
   /* ── Toggle switch ── */
+  .deep-toggle { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted);
+                 border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 8px;
+                 cursor: pointer; user-select: none; }
+  .deep-toggle input { accent-color: var(--accent2); margin: 0; }
+  .deep-progress { font-size: 12px; color: var(--muted); }
   .mode-toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
   .mode-toggle span.active { color: var(--text); font-weight: 600; }
   .switch { position: relative; display: inline-block; width: 42px; height: 22px; }
@@ -279,6 +284,9 @@
       style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);
              padding:5px 8px;cursor:pointer;font-size:12px;">↻</button>
     <select id="model"></select>
+    <label class="deep-toggle" title="Deep mode: read every block of the selected documents (slower, better for summaries, lists and comparisons)">
+      <input type="checkbox" id="deepMode" onchange="saveDeepMode(this.checked)"> Deep
+    </label>
     <button onclick="clearHistory()" title="Clear chat"
       style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);
              padding:5px 10px;cursor:pointer;font-size:12px;">🗑 Chat</button>
@@ -856,6 +864,7 @@ async function sendQuery() {
         role: document.getElementById('role').value,
         model: document.getElementById('model').value,
         collections: cols,
+        deep: document.getElementById('deepMode').checked,
       }),
     });
 
@@ -883,6 +892,11 @@ async function sendQuery() {
         if (parsed.type === 'error') throw new Error(parsed.error);
         if (parsed.type === 'sources') {
           sources = parsed.sources || [];
+        }
+        if (parsed.type === 'progress' && firstChunk) {
+          const label = parsed.stage === 'map' ? 'Reading blocks' : 'Merging notes';
+          msgEl.innerHTML = `<span class="deep-progress">${label} ${parsed.done}/${parsed.total}…</span>` +
+            '<span class="cursor"></span>';
         }
         if (parsed.type === 'text') {
           firstChunk = false;
@@ -913,11 +927,23 @@ async function sendQuery() {
   }
 }
 
+// ── Deep mode toggle (per-browser preference) ──────────────────────────────
+const DEEP_KEY = 'docAnalyzerDeepMode';
+
+function saveDeepMode(on) {
+  try { localStorage.setItem(DEEP_KEY, on ? '1' : '0'); } catch {}
+}
+
+function loadDeepMode() {
+  try { document.getElementById('deepMode').checked = localStorage.getItem(DEEP_KEY) === '1'; } catch {}
+}
+
 function renderSources(sources) {
   if (!sources || sources.length === 0) return '';
   const items = sources.map(s => {
     const file = s.file ? s.file.split('/').pop().split('\\').pop() : 'unknown';
-    const page = s.page != null ? `<span class="source-page">p.${s.page + 1}</span>` : '';
+    const page = s.page != null ? `<span class="source-page">p.${s.page + 1}</span>`
+      : s.blocks != null ? `<span class="source-page">${s.blocks} block${s.blocks === 1 ? '' : 's'}</span>` : '';
     const score = `<span class="source-score">${(s.score * 100).toFixed(0)}%</span>`;
     return `<div class="source-item">
       <span class="source-file" title="${s.file}">${file}</span>
@@ -1205,6 +1231,7 @@ function exportChat() {
   URL.revokeObjectURL(a.href);
 }
 
+loadDeepMode();
 init();
 
 // Restore history after init so the UI is ready

@@ -244,6 +244,7 @@ class QueryRequest(BaseModel):
     role: str = "default"
     model: Optional[str] = None
     collections: List[str] = []
+    deep: bool = False  # map → reduce over every block instead of top-k retrieval
 
 
 @app.post("/api/query")
@@ -254,7 +255,9 @@ def query(req: QueryRequest, _: None = Depends(require_auth)):
         raise HTTPException(400, "No documents in context")
     try:
         cols = document_service.resolve_query_collections(req.collections)
-        answer = rag_processor.query(req.question.strip(), cols, req.role, req.model)
+        answer = rag_processor.query(
+            req.question.strip(), cols, req.role, req.model, deep=req.deep
+        )
         return {"answer": answer}
     except ValueError as exc:
         raise HTTPException(422, str(exc))
@@ -270,10 +273,11 @@ def query_stream(req: QueryRequest, _: None = Depends(require_auth)):
         raise HTTPException(400, "No documents in context")
 
     cols = document_service.resolve_query_collections(req.collections)
+    stream = rag_processor.query_stream_deep if req.deep else rag_processor.query_stream
 
     def generate():
         try:
-            for event in rag_processor.query_stream(
+            for event in stream(
                 req.question.strip(), cols, req.role, req.model
             ):
                 yield f"data: {json.dumps(event)}\n\n"

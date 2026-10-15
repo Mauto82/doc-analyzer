@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.8.0] - 2026-10-15
+
+Feature release: **Deep mode** — lettura integrale dei documenti (map → reduce ricorsivo) per domande che il retrieval top-k non copre: riassunti, elenchi esaustivi, confronti. Ispirato a [Recursive Language Models](https://arxiv.org/abs/2512.24601).
+
+### Deep mode
+
+- Nuovo `RAGProcessor.query_stream_deep()`:
+  - **Rebuild** — ricostruisce ogni file dai chunk in Qdrant (ordinati per `chunk_index`) e li raggruppa in blocchi da `DEEP_BLOCK_CHARS`, senza mai unire file diversi
+  - **Map** — una chiamata LLM per blocco (in parallelo, `DEEP_MAX_WORKERS`) che estrae le informazioni rilevanti o risponde `NONE`
+  - **Reduce** — fusione ricorsiva delle note finché non stanno in un blocco (max 4 livelli)
+  - **Answer** — risposta finale in streaming con il ruolo selezionato
+  - Nuovo evento SSE `{"type": "progress", "stage": "map"|"reduce", "done", "total"}`
+  - Sources per file con numero di blocchi rilevanti (`blocks`) e quota sul totale (`score`)
+  - Limite `DEEP_MAX_BLOCKS` (default 60): oltre, la query viene rifiutata con un errore esplicito
+- `add_document()` salva ora `chunk_index` nel payload. I chunk già indicizzati vengono ricostruiti in ordine di pagina
+- Nuovi prompt `DEEP_MAP_PROMPT`, `DEEP_COMBINE_PROMPT`, `DEEP_ANSWER_PROMPT` in `src/config/prompts.py`
+- `QueryRequest` accetta `deep: bool` (default `false`) su `/api/query` e `/api/query/stream`
+- UI: checkbox **Deep** nell'header (preferenza salvata in `localStorage`) e indicatore di avanzamento "Reading blocks n/m… / Merging notes n/m…"
+
+### Configurazione
+
+- `DEEP_BLOCK_CHARS` (10000), `DEEP_MAX_BLOCKS` (60), `DEEP_MAX_WORKERS` (2) in `.env.example`
+
+### Test
+
+- `tests/unit/test_rag_processor_deep.py` — **18 nuovi test**: `chunk_index`, ordinamento e dimensione blocchi, blocchi per file, fallback per pagina, map/progress/sources, blocchi irrilevanti, reduce ricorsivo, limite blocchi, ruolo non valido, `query(deep=True)`, riconoscimento `NONE`
+- `tests/unit/test_app_query_stream.py` — **3 nuovi test**: routing `deep` su stream e query, default su pipeline standard
+
+---
+
 ## [0.7.0] - 2026-04-01
 
 Feature release: importazione di contenuti da URL — pagine web, documentazioni API e trascrizioni di video YouTube (stile NotebookLM).

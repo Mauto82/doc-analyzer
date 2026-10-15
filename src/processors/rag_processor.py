@@ -1,12 +1,19 @@
 import os
 import uuid
-from typing import Generator, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, Generator, List, Optional, Tuple
 
 import ollama
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointIdsList, PointStruct, VectorParams
 
-from src.config.prompts import BASE_PROMPT, registry as prompt_registry
+from src.config.prompts import (
+    BASE_PROMPT,
+    DEEP_ANSWER_PROMPT,
+    DEEP_COMBINE_PROMPT,
+    DEEP_MAP_PROMPT,
+    registry as prompt_registry,
+)
 from src.models.document import Document
 
 DEFAULT_COLLECTION = "default"
@@ -31,6 +38,10 @@ class RAGProcessor:
         vector_size: int = 1024,
         truncation_factor: float = 0.8,
         max_truncation_attempts: int = 12,
+        deep_block_chars: int = 10000,
+        deep_max_blocks: int = 60,
+        deep_max_workers: int = 2,
+        deep_max_reduce_depth: int = 4,
     ) -> None:
         self.model_name = model_name
         self.embedding_model = embedding_model
@@ -41,6 +52,10 @@ class RAGProcessor:
         self._vector_size = vector_size
         self._truncation_factor = truncation_factor
         self._max_truncation_attempts = max_truncation_attempts
+        self._deep_block_chars = deep_block_chars
+        self._deep_max_blocks = deep_max_blocks
+        self._deep_max_workers = deep_max_workers
+        self._deep_max_reduce_depth = deep_max_reduce_depth
 
     # ── Factory ───────────────────────────────────────────────────────────────
 
@@ -64,6 +79,9 @@ class RAGProcessor:
             vector_size=int(os.getenv("EMBEDDING_VECTOR_SIZE", "1024")),
             truncation_factor=float(os.getenv("EMBEDDING_TRUNCATION_FACTOR", "0.8")),
             max_truncation_attempts=int(os.getenv("EMBEDDING_MAX_TRUNCATION_ATTEMPTS", "12")),
+            deep_block_chars=int(os.getenv("DEEP_BLOCK_CHARS", "10000")),
+            deep_max_blocks=int(os.getenv("DEEP_MAX_BLOCKS", "60")),
+            deep_max_workers=int(os.getenv("DEEP_MAX_WORKERS", "2")),
         )
 
     # ── Storage mode ──────────────────────────────────────────────────────────
@@ -160,9 +178,15 @@ class RAGProcessor:
             PointStruct(
                 id=point_id,
                 vector=embedding,
-                payload={"page_content": chunk.page_content, **chunk.metadata},
+                payload={
+                    "page_content": chunk.page_content,
+                    "chunk_index": index,
+                    **chunk.metadata,
+                },
             )
-            for point_id, embedding, chunk in zip(ids, embeddings, chunks)
+            for index, (point_id, embedding, chunk) in enumerate(
+                zip(ids, embeddings, chunks)
+            )
         ]
         self.qdrant.upsert(collection_name=collection_name, points=points)
         return ids
@@ -269,8 +293,11 @@ class RAGProcessor:
             question=question,
         )
 
+        yield from self._stream_answer(query_model, prompt)
+
+    def _stream_answer(self, model: str, prompt: str) -> Generator[dict, None, None]:
         for chunk in self.ollama_client.chat(
-            model=query_model,
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             stream=True,
         ):
@@ -278,17 +305,235 @@ class RAGProcessor:
             if content:
                 yield {"type": "text", "text": content}
 
+    # ── Deep mode (map → recursive reduce) ────────────────────────────────────
+
+    def query_stream_deep(
+        self,
+        question: str,
+        collections: List[str],
+        role: str = "default",
+        model: Optional[str] = None,
+    ) -> Generator[dict, None, None]:
+        """
+        Read every block of the selected documents instead of the top-k chunks.
+
+        Map:    each block (~deep_block_chars) is asked for question-relevant notes.
+        Reduce: notes are merged recursively until they fit in one block.
+        Answer: the final notes are passed to the LLM and the answer is streamed.
+
+        Yields the same events as query_stream, plus:
+          {"type": "progress", "stage": "map"|"reduce", "done": n, "total": m}
+        """
+        if role not in prompt_registry:
+            raise ValueError(
+                f"Invalid role. Must be one of: {', '.join(prompt_registry.keys())}"
+            )
+
+        query_model = model or self.model_name
+        blocks = self._build_blocks(collections)
+        if not blocks:
+            yield {"type": "text", "text": (
+                "I couldn't find any documents in the selected collections."
+            )}
+            return
+        if len(blocks) > self._deep_max_blocks:
+            raise ValueError(
+                f"Selected documents are too large for deep mode "
+                f"({len(blocks)} blocks, limit {self._deep_max_blocks}). "
+                "Select fewer collections or raise DEEP_MAX_BLOCKS."
+            )
+
+        # Map: extract question-relevant notes from every block
+        total = len(blocks)
+        yield {"type": "progress", "stage": "map", "done": 0, "total": total}
+        extracted: List[str] = [""] * total
+        prompts = [
+            DEEP_MAP_PROMPT.format(source=label, block=text, question=question)
+            for label, text in blocks
+        ]
+        for done, (index, result) in enumerate(
+            self._complete_parallel(query_model, prompts), start=1
+        ):
+            extracted[index] = result
+            yield {"type": "progress", "stage": "map", "done": done, "total": total}
+
+        relevant = [
+            (label, note)
+            for (label, _), note in zip(blocks, extracted)
+            if not self._is_empty_note(note)
+        ]
+        if not relevant:
+            yield {"type": "text", "text": (
+                "I read the selected documents in full but found nothing relevant "
+                "to your question."
+            )}
+            return
+
+        # Reduce: merge notes until they fit in a single block
+        notes = [f"[{label}]\n{note}" for label, note in relevant]
+        for _ in range(self._deep_max_reduce_depth):
+            if sum(len(n) for n in notes) <= self._deep_block_chars:
+                break
+            batches = self._batch_notes(notes)
+            if len(batches) == len(notes):
+                break  # every note is already block-sized: nothing left to merge
+            merged: List[str] = [""] * len(batches)
+            prompts = []
+            for i, batch in enumerate(batches):
+                if len(batch) == 1:
+                    merged[i] = batch[0]
+                else:
+                    prompts.append((i, DEEP_COMBINE_PROMPT.format(
+                        notes="\n\n".join(batch), question=question
+                    )))
+            yield {"type": "progress", "stage": "reduce", "done": 0, "total": len(prompts)}
+            for done, (j, result) in enumerate(
+                self._complete_parallel(query_model, [p for _, p in prompts]), start=1
+            ):
+                merged[prompts[j][0]] = result
+                yield {"type": "progress", "stage": "reduce", "done": done, "total": len(prompts)}
+            notes = merged
+
+        yield {"type": "sources", "sources": self._deep_sources(blocks, relevant)}
+
+        prompt = DEEP_ANSWER_PROMPT.format(
+            role_prompt=prompt_registry.get_prompt(role),
+            notes="\n\n".join(notes),
+            question=question,
+        )
+        yield from self._stream_answer(query_model, prompt)
+
+    def _load_file_chunks(self, collections: List[str]) -> Dict[Tuple[str, str], List[dict]]:
+        """Return {(collection, file_name): [payload, ...]} in original document order."""
+        files: Dict[Tuple[str, str], List[dict]] = {}
+        for col in collections:
+            offset = None
+            while True:
+                try:
+                    points, next_offset = self.qdrant.scroll(
+                        collection_name=col,
+                        limit=256,
+                        offset=offset,
+                        with_payload=True,
+                        with_vectors=False,
+                    )
+                except Exception:
+                    break
+                for point in points:
+                    payload = point.payload or {}
+                    fname = payload.get("file_name", payload.get("source", "unknown"))
+                    files.setdefault((col, fname), []).append(payload)
+                if next_offset is None:
+                    break
+                offset = next_offset
+
+        # chunk_index preserves the original order; chunks indexed before it
+        # existed fall back to page order.
+        for payloads in files.values():
+            payloads.sort(key=lambda p: (
+                p.get("chunk_index") is None,
+                p.get("chunk_index") or 0,
+                p.get("page") or 0,
+            ))
+        return files
+
+    def _build_blocks(self, collections: List[str]) -> List[Tuple[str, str]]:
+        """Group consecutive chunks of each file into (file_label, text) blocks."""
+        blocks: List[Tuple[str, str]] = []
+        for (_, fname), payloads in self._load_file_chunks(collections).items():
+            current: List[str] = []
+            size = 0
+            for payload in payloads:
+                text = payload.get("page_content", "")
+                if current and size + len(text) > self._deep_block_chars:
+                    blocks.append((fname, "\n".join(current)))
+                    current, size = [], 0
+                current.append(text)
+                size += len(text)
+            if current:
+                blocks.append((fname, "\n".join(current)))
+        return blocks
+
+    def _batch_notes(self, notes: List[str]) -> List[List[str]]:
+        """Greedily group notes so each batch fits in one block."""
+        batches: List[List[str]] = []
+        current: List[str] = []
+        size = 0
+        for note in notes:
+            if current and size + len(note) > self._deep_block_chars:
+                batches.append(current)
+                current, size = [], 0
+            current.append(note)
+            size += len(note)
+        if current:
+            batches.append(current)
+        return batches
+
+    def _complete(self, model: str, prompt: str) -> str:
+        response = self.ollama_client.chat(
+            model=model, messages=[{"role": "user", "content": prompt}]
+        )
+        return (response.message.content or "").strip()
+
+    def _complete_parallel(
+        self, model: str, prompts: List[str]
+    ) -> Generator[Tuple[int, str], None, None]:
+        """Run prompts concurrently, yielding (index, result) as each one finishes."""
+        if not prompts:
+            return
+        pool = ThreadPoolExecutor(max_workers=max(1, self._deep_max_workers))
+        try:
+            futures = {
+                pool.submit(self._complete, model, prompt): index
+                for index, prompt in enumerate(prompts)
+            }
+            for future in as_completed(futures):
+                yield futures[future], future.result()
+        finally:
+            # Client disconnects close the generator: drop pending LLM calls
+            pool.shutdown(wait=False, cancel_futures=True)
+
+    @staticmethod
+    def _is_empty_note(note: str) -> bool:
+        cleaned = note.strip().strip(".*_`'\"").upper()
+        return not cleaned or (cleaned.startswith("NONE") and len(cleaned) <= 12)
+
+    @staticmethod
+    def _deep_sources(
+        blocks: List[Tuple[str, str]], relevant: List[Tuple[str, str]]
+    ) -> List[dict]:
+        """One source per file; score = share of the file's blocks that were relevant."""
+        totals: Dict[str, int] = {}
+        for label, _ in blocks:
+            totals[label] = totals.get(label, 0) + 1
+        hits: Dict[str, int] = {}
+        for label, _ in relevant:
+            hits[label] = hits.get(label, 0) + 1
+        sources = [
+            {
+                "file": label,
+                "page": None,
+                "score": round(count / totals[label], 3),
+                "blocks": count,
+            }
+            for label, count in hits.items()
+        ]
+        sources.sort(key=lambda s: s["blocks"], reverse=True)
+        return sources
+
     def query(
         self,
         question: str,
         collections: Optional[List[str]] = None,
         role: str = "default",
         model: Optional[str] = None,
+        deep: bool = False,
     ) -> str:
         cols = collections if collections is not None else [DEFAULT_COLLECTION]
+        stream = self.query_stream_deep if deep else self.query_stream
         return "".join(
             item["text"]
-            for item in self.query_stream(question, cols, role, model)
+            for item in stream(question, cols, role, model)
             if item.get("type") == "text"
         )
 

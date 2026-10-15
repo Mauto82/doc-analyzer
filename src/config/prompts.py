@@ -36,6 +36,47 @@ Question: {question}
 Please provide your answer in the same language as the question, \
 using only information from the provided excerpts:"""
 
+# ── Deep mode (map → recursive reduce) ────────────────────────────────────────
+
+DEEP_MAP_PROMPT = """\
+You are reading one block of a larger document ("{source}").
+Extract EVERY piece of information in this block that is relevant to the question:
+facts, figures, dates, names, quotes, clauses. Be exhaustive but concise, use bullet points,
+and keep page or section references when visible.
+If the block contains nothing relevant, reply with exactly: NONE
+
+Block:
+{block}
+
+Question: {question}
+
+Relevant information (or NONE):"""
+
+DEEP_COMBINE_PROMPT = """\
+The following are notes extracted from different parts of one or more documents.
+Merge them into a single set of notes relevant to the question.
+Remove duplicates, keep every distinct fact, figure and source reference ([file] labels).
+
+Notes:
+{notes}
+
+Question: {question}
+
+Merged notes:"""
+
+DEEP_ANSWER_PROMPT = """\
+The following notes were extracted by reading the selected documents in full, block by block.
+Answer the question using ONLY these notes. Cite the source file names when useful.
+
+{role_prompt}
+
+Notes: {notes}
+
+Question: {question}
+
+Please provide your answer in the same language as the question, \
+using only information from the notes:"""
+
 
 @dataclass(frozen=True)
 class RoleConfig:

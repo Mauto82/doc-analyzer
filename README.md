@@ -13,6 +13,7 @@ Doc Analyzer enables you to:
 - Organize documents into **named collections** and query across multiple collections simultaneously
 - Switch between **in-memory** (volatile) and **persistent** storage from the UI
 - Ask questions and get **streaming AI responses** with **source citations** rendered in Markdown
+- Switch on **Deep mode** to read the selected documents in full (map → reduce) for summaries, exhaustive lists and comparisons that top-k retrieval misses
 - Select any **LLM model** installed in Ollama
 - Choose an **analysis role** (legal, financial, technical…) and add custom ones without touching the code
 - Extract text from **scanned or vector-path PDFs** via automatic OCR fallback
@@ -141,6 +142,11 @@ QDRANT_DB_PATH=./data/qdrant
 # Chunking
 CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
+
+# Deep mode (optional — defaults shown)
+DEEP_BLOCK_CHARS=10000   # characters per block sent to the LLM; keep under the model's num_ctx
+DEEP_MAX_BLOCKS=60       # refuse deep queries over more blocks than this
+DEEP_MAX_WORKERS=2       # parallel LLM calls; match OLLAMA_NUM_PARALLEL
 ```
 
 > **Docker note:** `docker-compose.yml` automatically overrides `OLLAMA_HOST` to `host.docker.internal` so the container can reach Ollama on the host machine.
@@ -161,8 +167,8 @@ CHUNK_OVERLAP=200
 | `POST` | `/api/import` | Import content from a URL (web page, API docs, YouTube) |
 | `DELETE` | `/api/collections/{col}/files/{file}` | Remove a file from a collection |
 | `DELETE` | `/api/files` | Clear all documents |
-| `POST` | `/api/query` | Query (full response) |
-| `POST` | `/api/query/stream` | Query with SSE streaming response |
+| `POST` | `/api/query` | Query (full response). Body: `{question, role, model, collections, deep}` |
+| `POST` | `/api/query/stream` | Query with SSE streaming response (same body; `deep: true` adds `progress` events) |
 | `POST` | `/api/prompts/reload` | Reload prompts from disk without restart |
 | `GET` | `/api/notes` | List all saved notes |
 | `POST` | `/api/notes` | Save a new note |
@@ -214,6 +220,22 @@ Python, JavaScript, TypeScript, Java, C/C++, C#, PHP, Go, Ruby, Rust, HTML, CSS,
 - Each response shows **source citations** — the documents and pages used to generate the answer
 - Select a **role** to frame the analysis perspective
 - Select a **model** — all models installed in Ollama are available
+- Tick **Deep** in the header to switch to deep mode (see below); the choice is remembered per browser
+
+### Deep mode
+
+Standard queries retrieve the 4 chunks closest to the question. That works for targeted questions ("what does clause 5 say?") but cannot answer questions that need the whole document: "list every deadline", "summarise the report", "compare the termination clauses in A and B".
+
+Deep mode reads everything in the selected collections, inspired by [Recursive Language Models](https://arxiv.org/abs/2512.24601) (Zhang, Kraska, Khattab):
+
+1. **Rebuild** — each file is reassembled from its stored chunks in original order and grouped into blocks of `DEEP_BLOCK_CHARS`. Blocks never span two files.
+2. **Map** — every block is sent to the LLM with the question, asking for all relevant facts or `NONE`. Calls run in parallel (`DEEP_MAX_WORKERS`).
+3. **Reduce** — if the collected notes don't fit in one block, they are merged in batches, recursively (max 4 rounds).
+4. **Answer** — the final notes are passed to the LLM with the selected role and the answer streams as usual.
+
+Sources list each file that contributed, with the number of relevant blocks; the percentage is the share of the file's blocks that contained relevant information.
+
+**Trade-offs:** one LLM call per block, so deep mode is much slower than a standard query (on a ~45k-char document with a local 12B model: about 2 minutes versus 24 s, but 5 deadlines found out of 5 versus 1 out of 5). Use it for aggregation questions, not lookups. Queries over more than `DEEP_MAX_BLOCKS` blocks are refused. Narrow the collections or raise the limit.
 
 ### Notes
 
@@ -256,6 +278,7 @@ Centralises all document state and orchestration. FastAPI routes are thin HTTP a
 - Stores vectors in Qdrant (cosine distance, configurable dimensions via `EMBEDDING_VECTOR_SIZE`)
 - On query: embeds the question, retrieves top-4 chunks per collection, merges and re-ranks globally, streams the answer via `ollama.Client.chat(stream=True)`
 - `query_stream()` emits structured events: `{"type":"sources", "sources":[...]}` first, then `{"type":"text", "text":"token"}` — the frontend renders citations and text separately
+- `query_stream_deep()` implements deep mode: rebuilds files from Qdrant payloads (ordered by `chunk_index`, stored at indexing time; older chunks fall back to page order), maps every block, reduces recursively and streams the answer. It also emits `{"type":"progress", "stage":"map"|"reduce", "done":n, "total":m}`
 - Automatic retry with progressive truncation (configurable via `EMBEDDING_TRUNCATION_FACTOR` and `EMBEDDING_MAX_TRUNCATION_ATTEMPTS`) when a chunk exceeds the embedding model's context length
 
 ### Note Service (`services/note_service.py`)
@@ -286,7 +309,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-205 tests covering: RAG processor (including sources events and truncation logic), document service, note service, prompt registry, all processors (including WebProcessor), API endpoints (upload, URL import, collections, streaming, notes).
+232 tests covering: RAG processor (including sources events, truncation logic and deep mode), document service, note service, prompt registry, all processors (including WebProcessor), API endpoints (upload, URL import, collections, streaming, notes).
 
 ## Troubleshooting
 
@@ -305,6 +328,11 @@ pip install pytesseract Pillow
 
 ### "Input length exceeds context length" during upload
 Handled automatically — the processor retries with progressively shorter chunks. If it persists, reduce `CHUNK_SIZE` in `.env`.
+
+### Deep mode is slow or answers are incomplete
+- Each block is one LLM call: reduce the selected collections, or raise `DEEP_MAX_WORKERS` together with `OLLAMA_NUM_PARALLEL` on the Ollama side
+- If the model ignores parts of a block, its context window is too small: lower `DEEP_BLOCK_CHARS` or raise the model's `num_ctx`
+- Documents indexed before deep mode have no `chunk_index`; they are rebuilt in page order, which is exact for PDFs but approximate for other formats. Re-upload them for exact ordering
 
 ### Qdrant data lost after restart
 Switch to Persist mode using the toggle in the UI header. The `./data` directory is volume-mounted in Docker.

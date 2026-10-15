@@ -122,3 +122,46 @@ def test_stream_error_propagated(app_client):
         if line.startswith("data: ") and line[6:].strip() != "[DONE]"
     ]
     assert any("error" in p for p in payloads)
+
+
+# ── Deep mode ──────────────────────────────────────────────────────────────────
+
+def test_stream_deep_uses_deep_pipeline(app_client):
+    client, mock_rag, _ = app_client
+    _seed_file(client)
+    mock_rag.query_stream_deep.return_value = iter([
+        {"type": "progress", "stage": "map", "done": 1, "total": 1},
+        {"type": "text", "text": "deep answer"},
+    ])
+
+    with client.stream("POST", "/api/query/stream",
+                       json={"question": "summarise", "deep": True}) as resp:
+        raw = resp.read().decode()
+
+    mock_rag.query_stream_deep.assert_called_once()
+    mock_rag.query_stream.assert_not_called()
+    assert '"type": "progress"' in raw
+    assert "deep answer" in raw
+
+
+def test_stream_defaults_to_standard_pipeline(app_client):
+    client, mock_rag, _ = app_client
+    _seed_file(client)
+    mock_rag.query_stream.return_value = _text_events("ok")
+
+    with client.stream("POST", "/api/query/stream", json={"question": "q"}) as resp:
+        resp.read()
+
+    mock_rag.query_stream.assert_called_once()
+    mock_rag.query_stream_deep.assert_not_called()
+
+
+def test_query_passes_deep_flag(app_client):
+    client, mock_rag, _ = app_client
+    _seed_file(client)
+    mock_rag.query.return_value = "answer"
+
+    res = client.post("/api/query", json={"question": "q", "deep": True})
+
+    assert res.status_code == 200
+    assert mock_rag.query.call_args.kwargs["deep"] is True
