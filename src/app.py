@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import json
+import logging
 import os
 import tempfile
 from typing import List, Optional
@@ -46,6 +47,12 @@ default_model = os.getenv("LLM_MODEL")
 _security = HTTPBasic()
 _APP_USERNAME = os.getenv("APP_USERNAME", "admin")
 _APP_PASSWORD = os.getenv("APP_PASSWORD", "changeme")
+
+if _APP_PASSWORD == "changeme":
+    logging.getLogger("uvicorn.error").warning(
+        "APP_PASSWORD is the default 'changeme'. Set a real password in .env "
+        "before exposing Doc Analyzer beyond localhost."
+    )
 
 
 def require_auth(credentials: HTTPBasicCredentials = Depends(_security)):

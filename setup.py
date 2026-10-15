@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="doc-analyzer",
-    version="0.8.0",
+    version="0.8.1",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=[

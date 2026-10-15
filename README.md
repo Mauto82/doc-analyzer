@@ -139,6 +139,9 @@ OLLAMA_PORT=11434
 # Vector store
 QDRANT_DB_PATH=./data/qdrant
 
+# Chunks embedded per Ollama call during upload
+EMBEDDING_BATCH_SIZE=32
+
 # Chunking
 CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
@@ -274,7 +277,7 @@ Centralises all document state and orchestration. FastAPI routes are thin HTTP a
 
 ### RAG Processor (`rag_processor.py`)
 - Accepts injected Ollama and Qdrant clients (Dependency Injection) — fully testable without environment setup
-- Embeds chunks using `mxbai-embed-large` via `ollama.Client.embed()`
+- Embeds chunks using `mxbai-embed-large` via `ollama.Client.embed()`, in batches of `EMBEDDING_BATCH_SIZE`; a failing batch falls back to per-chunk embedding with truncation retry
 - Stores vectors in Qdrant (cosine distance, configurable dimensions via `EMBEDDING_VECTOR_SIZE`)
 - On query: embeds the question, retrieves top-4 chunks per collection, merges and re-ranks globally, streams the answer via `ollama.Client.chat(stream=True)`
 - `query_stream()` emits structured events: `{"type":"sources", "sources":[...]}` first, then `{"type":"text", "text":"token"}` — the frontend renders citations and text separately
@@ -309,7 +312,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-232 tests covering: RAG processor (including sources events, truncation logic and deep mode), document service, note service, prompt registry, all processors (including WebProcessor), API endpoints (upload, URL import, collections, streaming, notes).
+241 tests covering: RAG processor (including sources events, truncation logic and deep mode), document service, note service, prompt registry, all processors (including WebProcessor), API endpoints (upload, URL import, collections, streaming, notes).
 
 ## Troubleshooting
 
@@ -328,6 +331,9 @@ pip install pytesseract Pillow
 
 ### "Input length exceeds context length" during upload
 Handled automatically — the processor retries with progressively shorter chunks. If it persists, reduce `CHUNK_SIZE` in `.env`.
+
+### Warning: "APP_PASSWORD is the default 'changeme'"
+Logged at startup when the password was not changed. Set `APP_PASSWORD` in `.env` before exposing the app beyond localhost.
 
 ### Deep mode is slow or answers are incomplete
 - Each block is one LLM call: reduce the selected collections, or raise `DEEP_MAX_WORKERS` together with `OLLAMA_NUM_PARALLEL` on the Ollama side

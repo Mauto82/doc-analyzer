@@ -528,7 +528,7 @@ function renderMemoryFiles() {
   if (!files.length) { el.innerHTML = '<div class="empty-msg">No documents loaded</div>'; return; }
   el.innerHTML = files.map(f =>
     `<div class="file-item">
-       <span title="${f}">${f}</span>
+       <span title="${escHtml(f)}">${escHtml(f)}</span>
        <button class="icon-btn" onclick="removeFile('default','${escHtml(f)}')" title="Remove">&times;</button>
      </div>`
   ).join('');
@@ -946,7 +946,7 @@ function renderSources(sources) {
       : s.blocks != null ? `<span class="source-page">${s.blocks} block${s.blocks === 1 ? '' : 's'}</span>` : '';
     const score = `<span class="source-score">${(s.score * 100).toFixed(0)}%</span>`;
     return `<div class="source-item">
-      <span class="source-file" title="${s.file}">${file}</span>
+      <span class="source-file" title="${escHtml(s.file || '')}">${escHtml(file)}</span>
       ${page}${score}
     </div>`;
   }).join('');

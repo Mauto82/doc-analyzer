@@ -250,3 +250,98 @@ def test_rebuild_files_map_pagination(rag):
     assert "a.pdf" in result["col"]
     assert "b.pdf" in result["col"]
     assert rag.qdrant.scroll.call_count == 2
+
+
+# ── _get_embeddings batching ───────────────────────────────────────────────────
+
+def _embed_response(n):
+    resp = MagicMock()
+    resp.embeddings = [[0.1] * 1024] * n
+    return resp
+
+
+def test_get_embeddings_batches_calls(mock_ollama_client, mock_qdrant_client):
+    rag = RAGProcessor(
+        ollama_client=mock_ollama_client,
+        qdrant_client=mock_qdrant_client,
+        model_name="test-model",
+        embedding_model="test-embed-model",
+        qdrant_path="./data/test",
+        embed_batch_size=2,
+    )
+    rag.ollama_client.embed.side_effect = lambda model, input: _embed_response(len(input))
+
+    result = rag._get_embeddings(["a", "b", "c", "d", "e"])
+
+    assert len(result) == 5
+    inputs = [c.kwargs["input"] for c in rag.ollama_client.embed.call_args_list]
+    assert inputs == [["a", "b"], ["c", "d"], ["e"]]
+
+
+def test_get_embeddings_falls_back_per_text_on_batch_error(rag):
+    def embed(model, input):
+        if len(input) > 1:
+            raise Exception("input length exceeds context length")
+        return _embed_response(1)
+
+    rag.ollama_client.embed.side_effect = embed
+
+    result = rag._get_embeddings(["a", "b", "c"])
+
+    assert len(result) == 3
+    inputs = [c.kwargs["input"] for c in rag.ollama_client.embed.call_args_list]
+    assert inputs == [["a", "b", "c"], ["a"], ["b"], ["c"]]
+
+
+def test_get_embeddings_falls_back_on_count_mismatch(rag):
+    rag.ollama_client.embed.return_value = _embed_response(1)
+    assert len(rag._get_embeddings(["a", "b"])) == 2
+    assert rag.ollama_client.embed.call_count == 3
+
+
+# ── Collection errors in queries ───────────────────────────────────────────────
+
+def _existing(*names):
+    cols = []
+    for name in names:
+        c = MagicMock()
+        c.name = name
+        cols.append(c)
+    return MagicMock(collections=cols)
+
+
+def test_query_skips_missing_collection(rag):
+    rag.qdrant.get_collections.return_value = _existing("real")
+    point = MagicMock(payload={"page_content": "ctx"}, score=0.9)
+
+    def query_points(collection_name, **kwargs):
+        if collection_name == "ghost":
+            raise ValueError("Collection ghost not found")
+        return MagicMock(points=[point])
+
+    rag.qdrant.query_points.side_effect = query_points
+
+    events = list(rag.query_stream("q", ["ghost", "real"]))
+    assert any(e["type"] == "text" and e["text"] == "streamed token" for e in events)
+
+
+def test_query_surfaces_errors_on_existing_collection(rag):
+    rag.qdrant.get_collections.return_value = _existing("real")
+    rag.qdrant.query_points.side_effect = ConnectionError("qdrant down")
+
+    with pytest.raises(ConnectionError, match="qdrant down"):
+        list(rag.query_stream("q", ["real"]))
+
+
+def test_deep_surfaces_errors_on_existing_collection(rag):
+    rag.qdrant.get_collections.return_value = _existing("real")
+    rag.qdrant.scroll.side_effect = ConnectionError("qdrant down")
+
+    with pytest.raises(ConnectionError, match="qdrant down"):
+        list(rag.query_stream_deep("q", ["real"]))
+
+
+def test_deep_skips_missing_collection(rag):
+    rag.qdrant.scroll.side_effect = ValueError("Collection ghost not found")
+    events = list(rag.query_stream_deep("q", ["ghost"]))
+    assert "couldn't find any documents" in events[-1]["text"]

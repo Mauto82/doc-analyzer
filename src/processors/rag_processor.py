@@ -36,6 +36,7 @@ class RAGProcessor:
         embedding_model: str,
         qdrant_path: str,
         vector_size: int = 1024,
+        embed_batch_size: int = 32,
         truncation_factor: float = 0.8,
         max_truncation_attempts: int = 12,
         deep_block_chars: int = 10000,
@@ -50,6 +51,7 @@ class RAGProcessor:
         self._mode = "memory"
         self.qdrant = qdrant_client
         self._vector_size = vector_size
+        self._embed_batch_size = embed_batch_size
         self._truncation_factor = truncation_factor
         self._max_truncation_attempts = max_truncation_attempts
         self._deep_block_chars = deep_block_chars
@@ -77,6 +79,7 @@ class RAGProcessor:
             embedding_model=os.getenv("EMBEDDING_MODEL", "mxbai-embed-large:latest"),
             qdrant_path=os.getenv("QDRANT_DB_PATH", "./data/qdrant"),
             vector_size=int(os.getenv("EMBEDDING_VECTOR_SIZE", "1024")),
+            embed_batch_size=int(os.getenv("EMBEDDING_BATCH_SIZE", "32")),
             truncation_factor=float(os.getenv("EMBEDDING_TRUNCATION_FACTOR", "0.8")),
             max_truncation_attempts=int(os.getenv("EMBEDDING_MAX_TRUNCATION_ATTEMPTS", "12")),
             deep_block_chars=int(os.getenv("DEEP_BLOCK_CHARS", "10000")),
@@ -160,7 +163,25 @@ class RAGProcessor:
         )
 
     def _get_embeddings(self, texts: List[str]) -> List[List[float]]:
-        return [self._embed_single(text) for text in texts]
+        """
+        Embed texts in batches of embed_batch_size (one Ollama call per batch).
+        If a batch fails (e.g. one chunk exceeds the context length), fall back
+        to per-text embedding, which retries with progressive truncation.
+        """
+        embeddings: List[List[float]] = []
+        size = max(1, self._embed_batch_size)
+        for start in range(0, len(texts), size):
+            batch = texts[start:start + size]
+            try:
+                response = self.ollama_client.embed(
+                    model=self.embedding_model, input=batch
+                )
+                if len(response.embeddings) != len(batch):
+                    raise RuntimeError("Embedding count does not match batch size")
+                embeddings.extend(response.embeddings)
+            except Exception:
+                embeddings.extend(self._embed_single(text) for text in batch)
+        return embeddings
 
     # ── Documents ─────────────────────────────────────────────────────────────
 
@@ -264,7 +285,10 @@ class RAGProcessor:
                 )
                 all_points.extend(results.points)
             except Exception:
-                pass
+                # A selected collection that was never created has nothing to
+                # return; any other failure (Qdrant down, bad vector) must surface.
+                if col in self.get_collections():
+                    raise
 
         if not all_points:
             yield {"type": "text", "text": (
@@ -418,7 +442,9 @@ class RAGProcessor:
                         with_vectors=False,
                     )
                 except Exception:
-                    break
+                    if col in self.get_collections():
+                        raise
+                    break  # selected collection was never created
                 for point in points:
                     payload = point.payload or {}
                     fname = payload.get("file_name", payload.get("source", "unknown"))

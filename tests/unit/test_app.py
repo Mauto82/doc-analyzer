@@ -57,3 +57,16 @@ def test_query_no_context(client):
     res = client.post("/api/query", json={"question": "test"})
     assert res.status_code == 400
     assert "No documents" in res.json()["detail"]
+
+
+@pytest.mark.parametrize("password,warned", [("changeme", True), ("s3cret", False)])
+def test_default_password_warning(monkeypatch, caplog, password, warned):
+    monkeypatch.setenv("APP_PASSWORD", password)
+    with patch("src.processors.rag_processor.ollama.Client"), \
+         patch("src.processors.rag_processor.QdrantClient"):
+        import importlib
+        import src.app
+        with caplog.at_level("WARNING", logger="uvicorn.error"):
+            importlib.reload(src.app)
+
+    assert ("APP_PASSWORD is the default" in caplog.text) is warned

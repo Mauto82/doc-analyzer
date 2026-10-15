@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.8.1] - 2026-10-15
+
+Fix release: sicurezza frontend, errori non più nascosti, embedding in batch.
+
+### Fix
+
+- **XSS** — i nomi file nella lista Memory e nelle sources delle risposte venivano inseriti come HTML senza escape. Un URL importato contenente markup (es. `<img onerror=…>`) veniva eseguito. Ora passano da `escHtml()` come nella lista Persist
+- **Errori Qdrant nascosti** — `query_stream()` e il deep mode ignoravano qualsiasi eccezione per collection (`except: pass`), mostrando "nessuna informazione rilevante" anche con Qdrant irraggiungibile. Ora vengono saltate solo le collection inesistenti; ogni altro errore arriva all'utente
+- **Password di default** — warning all'avvio se `APP_PASSWORD` è `changeme`
+
+### Miglioramenti
+
+- **Embedding in batch** — `_get_embeddings()` invia `EMBEDDING_BATCH_SIZE` chunk (default 32) per chiamata Ollama invece di uno alla volta. Se un batch fallisce si torna all'embedding per singolo chunk con retry e troncamento. Guadagno misurato su Ollama locale: ~17% (64 chunk, 5.8s → 4.8s)
+
+### Test
+
+- Fix `test_could_not_retrieve_raises_value_error` (classe eccezione duplicata) e fixture API con credenziali di test
+- **9 nuovi test**: batching, fallback per errore e per conteggio errato, collection inesistente saltata, errori Qdrant propagati (standard e deep), warning password
+
+---
+
 ## [0.8.0] - 2026-10-15
 
 Feature release: **Deep mode** — lettura integrale dei documenti (map → reduce ricorsivo) per domande che il retrieval top-k non copre: riassunti, elenchi esaustivi, confronti. Ispirato a [Recursive Language Models](https://arxiv.org/abs/2512.24601).
