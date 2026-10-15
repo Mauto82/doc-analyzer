@@ -13,7 +13,7 @@ Doc Analyzer enables you to:
 - Organize documents into **named collections** and query across multiple collections simultaneously
 - Switch between **in-memory** (volatile) and **persistent** storage from the UI
 - Ask questions and get **streaming AI responses** with **source citations** rendered in Markdown
-- Switch on **Deep mode** to read the selected documents in full (map → reduce) for summaries, exhaustive lists and comparisons that top-k retrieval misses
+- **Deep mode** reads the selected documents in full (map → reduce) for summaries, exhaustive lists and comparisons that top-k retrieval misses; **Auto mode** picks deep or standard from the question
 - Select any **LLM model** installed in Ollama
 - Choose an **analysis role** (legal, financial, technical…) and add custom ones without touching the code
 - Extract text from **scanned or vector-path PDFs** via automatic OCR fallback
@@ -50,7 +50,8 @@ doc-analyzer/
 │   │   └── travel_agent.md
 │   ├── services/
 │   │   ├── document_service.py         # State management and document orchestration
-│   │   └── note_service.py             # SQLite-backed notes CRUD
+│   │   ├── note_service.py             # SQLite-backed notes CRUD
+│   │   └── query_router.py             # Auto mode: standard vs deep from the question
 │   ├── utils/
 │   │   └── text_splitter.py            # Recursive character text splitter
 │   └── processors/
@@ -170,8 +171,8 @@ DEEP_MAX_WORKERS=2       # parallel LLM calls; match OLLAMA_NUM_PARALLEL
 | `POST` | `/api/import` | Import content from a URL (web page, API docs, YouTube) |
 | `DELETE` | `/api/collections/{col}/files/{file}` | Remove a file from a collection |
 | `DELETE` | `/api/files` | Clear all documents |
-| `POST` | `/api/query` | Query (full response). Body: `{question, role, model, collections, deep}` |
-| `POST` | `/api/query/stream` | Query with SSE streaming response (same body; `deep: true` adds `progress` events) |
+| `POST` | `/api/query` | Query (full response). Body: `{question, role, model, collections, mode}` with `mode` = `standard` (default), `deep` or `auto`. The legacy `deep: true` still means `mode: deep` |
+| `POST` | `/api/query/stream` | Query with SSE streaming response (same body; deep adds `progress` events, auto adds a `route` event first) |
 | `POST` | `/api/prompts/reload` | Reload prompts from disk without restart |
 | `GET` | `/api/notes` | List all saved notes |
 | `POST` | `/api/notes` | Save a new note |
@@ -223,7 +224,7 @@ Python, JavaScript, TypeScript, Java, C/C++, C#, PHP, Go, Ruby, Rust, HTML, CSS,
 - Each response shows **source citations** — the documents and pages used to generate the answer
 - Select a **role** to frame the analysis perspective
 - Select a **model** — all models installed in Ollama are available
-- Tick **Deep** in the header to switch to deep mode (see below); the choice is remembered per browser
+- Pick the query mode in the header: **Auto** (default), **Standard** or **Deep** (see below); the choice is remembered per browser
 
 ### Deep mode
 
@@ -239,6 +240,23 @@ Deep mode reads everything in the selected collections, inspired by [Recursive L
 Sources list each file that contributed, with the number of relevant blocks; the percentage is the share of the file's blocks that contained relevant information.
 
 **Trade-offs:** one LLM call per block, so deep mode is much slower than a standard query (on a ~45k-char document with a local 12B model: about 2 minutes versus 24 s, but 5 deadlines found out of 5 versus 1 out of 5). Use it for aggregation questions, not lookups. Queries over more than `DEEP_MAX_BLOCKS` blocks are refused. Narrow the collections or raise the limit.
+
+### Auto mode
+
+Auto mode (the UI default) picks the pipeline from the wording of the question, in Italian or English. Rules are deterministic and instant: no extra LLM call.
+
+| Route | Triggered by | Example |
+|-------|--------------|---------|
+| Deep · summary | riassumi, sintesi, panoramica, summarize, overview | "Riassumi il report" |
+| Deep · count | quante volte, how many times, count | "Quante volte compare *penale*?" |
+| Deep · comparison | confronta, differenze, compare *X* with *Y*, versus | "Confronta le clausole di recesso" |
+| Deep · exhaustive list | elenca, lista, list every, *tutte le scadenze/clausole/date…* | "Elenca tutte le scadenze" |
+| Deep · whole document | in tutto il documento, entire document | "Quali rischi in tutto il documento?" |
+| Standard | anything else | "Cosa dice l'articolo 5?" |
+
+Each answer shows the chosen route and its reason (e.g. *Deep · auto: exhaustive list*). If the router is wrong, pick Standard or Deep explicitly. When deep is chosen but the documents exceed `DEEP_MAX_BLOCKS`, auto falls back to standard instead of failing.
+
+Known trade-off: the rules favour precision on common phrasings. Unusual wording of an aggregation question ("what deadlines does the contract set?") stays on standard; use Deep explicitly for those. Rules live in `src/services/query_router.py` and are covered by `tests/unit/test_query_router.py`.
 
 ### Notes
 
@@ -281,6 +299,7 @@ Centralises all document state and orchestration. FastAPI routes are thin HTTP a
 - Stores vectors in Qdrant (cosine distance, configurable dimensions via `EMBEDDING_VECTOR_SIZE`)
 - On query: embeds the question, retrieves top-4 chunks per collection, merges and re-ranks globally, streams the answer via `ollama.Client.chat(stream=True)`
 - `query_stream()` emits structured events: `{"type":"sources", "sources":[...]}` first, then `{"type":"text", "text":"token"}` — the frontend renders citations and text separately
+- `query_stream_auto()` routes via `query_router.route_question()`, emits `{"type":"route", "mode", "reason"}` and delegates to the standard or deep stream
 - `query_stream_deep()` implements deep mode: rebuilds files from Qdrant payloads (ordered by `chunk_index`, stored at indexing time; older chunks fall back to page order), maps every block, reduces recursively and streams the answer. It also emits `{"type":"progress", "stage":"map"|"reduce", "done":n, "total":m}`
 - Automatic retry with progressive truncation (configurable via `EMBEDDING_TRUNCATION_FACTOR` and `EMBEDDING_MAX_TRUNCATION_ATTEMPTS`) when a chunk exceeds the embedding model's context length
 
@@ -312,7 +331,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-241 tests covering: RAG processor (including sources events, truncation logic and deep mode), document service, note service, prompt registry, all processors (including WebProcessor), API endpoints (upload, URL import, collections, streaming, notes).
+279 tests covering: RAG processor (including sources events, truncation logic and deep mode), document service, note service, prompt registry, all processors (including WebProcessor), API endpoints (upload, URL import, collections, streaming, notes).
 
 ## Troubleshooting
 

@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import tempfile
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 import secrets
 
@@ -251,7 +251,20 @@ class QueryRequest(BaseModel):
     role: str = "default"
     model: Optional[str] = None
     collections: List[str] = []
-    deep: bool = False  # map → reduce over every block instead of top-k retrieval
+    # "standard" = top-k retrieval, "deep" = map → reduce over every block,
+    # "auto" = pick one from the question wording (query_router).
+    mode: Optional[Literal["standard", "deep", "auto"]] = None
+    deep: bool = False  # legacy flag, used when mode is omitted
+
+    def resolved_mode(self) -> str:
+        return self.mode or ("deep" if self.deep else "standard")
+
+
+_STREAMS = {
+    "standard": "query_stream",
+    "deep": "query_stream_deep",
+    "auto": "query_stream_auto",
+}
 
 
 @app.post("/api/query")
@@ -263,7 +276,7 @@ def query(req: QueryRequest, _: None = Depends(require_auth)):
     try:
         cols = document_service.resolve_query_collections(req.collections)
         answer = rag_processor.query(
-            req.question.strip(), cols, req.role, req.model, deep=req.deep
+            req.question.strip(), cols, req.role, req.model, mode=req.resolved_mode()
         )
         return {"answer": answer}
     except ValueError as exc:
@@ -280,7 +293,7 @@ def query_stream(req: QueryRequest, _: None = Depends(require_auth)):
         raise HTTPException(400, "No documents in context")
 
     cols = document_service.resolve_query_collections(req.collections)
-    stream = rag_processor.query_stream_deep if req.deep else rag_processor.query_stream
+    stream = getattr(rag_processor, _STREAMS[req.resolved_mode()])
 
     def generate():
         try:

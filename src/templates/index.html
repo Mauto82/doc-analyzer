@@ -25,11 +25,8 @@
                   border-radius: var(--radius); padding: 5px 10px; font-size: 13px; }
 
   /* ── Toggle switch ── */
-  .deep-toggle { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted);
-                 border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 8px;
-                 cursor: pointer; user-select: none; }
-  .deep-toggle input { accent-color: var(--accent2); margin: 0; }
   .deep-progress { font-size: 12px; color: var(--muted); }
+  .route-tag { font-size: 10px; color: var(--muted); margin-bottom: 6px; letter-spacing: .02em; }
   .mode-toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
   .mode-toggle span.active { color: var(--text); font-weight: 600; }
   .switch { position: relative; display: inline-block; width: 42px; height: 22px; }
@@ -284,9 +281,12 @@
       style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);
              padding:5px 8px;cursor:pointer;font-size:12px;">↻</button>
     <select id="model"></select>
-    <label class="deep-toggle" title="Deep mode: read every block of the selected documents (slower, better for summaries, lists and comparisons)">
-      <input type="checkbox" id="deepMode" onchange="saveDeepMode(this.checked)"> Deep
-    </label>
+    <select id="queryMode" onchange="saveQueryMode(this.value)"
+      title="Auto: pick from the question. Standard: top matching passages (fast). Deep: read every block of the selected documents (slow; summaries, lists, comparisons)">
+      <option value="auto">Auto</option>
+      <option value="standard">Standard</option>
+      <option value="deep">Deep</option>
+    </select>
     <button onclick="clearHistory()" title="Clear chat"
       style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius);
              padding:5px 10px;cursor:pointer;font-size:12px;">🗑 Chat</button>
@@ -854,6 +854,7 @@ async function sendQuery() {
   let fullText = '';
   let firstChunk = true;
   let sources = [];
+  let route = null;
 
   try {
     const res = await fetch(API + '/api/query/stream', {
@@ -864,7 +865,7 @@ async function sendQuery() {
         role: document.getElementById('role').value,
         model: document.getElementById('model').value,
         collections: cols,
-        deep: document.getElementById('deepMode').checked,
+        mode: document.getElementById('queryMode').value,
       }),
     });
 
@@ -893,15 +894,20 @@ async function sendQuery() {
         if (parsed.type === 'sources') {
           sources = parsed.sources || [];
         }
+        if (parsed.type === 'route') {
+          route = parsed;
+          if (firstChunk) msgEl.innerHTML = renderRoute(route) + '<span class="cursor"></span>';
+        }
         if (parsed.type === 'progress' && firstChunk) {
           const label = parsed.stage === 'map' ? 'Reading blocks' : 'Merging notes';
-          msgEl.innerHTML = `<span class="deep-progress">${label} ${parsed.done}/${parsed.total}…</span>` +
+          msgEl.innerHTML = renderRoute(route) +
+            `<span class="deep-progress">${label} ${parsed.done}/${parsed.total}…</span>` +
             '<span class="cursor"></span>';
         }
         if (parsed.type === 'text') {
           firstChunk = false;
           fullText += parsed.text;
-          msgEl.innerHTML = renderMarkdown(fullText) + '<span class="cursor"></span>';
+          msgEl.innerHTML = renderRoute(route) + renderMarkdown(fullText) + '<span class="cursor"></span>';
           messagesEl.scrollTop = messagesEl.scrollHeight;
         }
       }
@@ -912,7 +918,7 @@ async function sendQuery() {
       msgEl.textContent = '(no response)';
     } else {
       const noteId = _storeNote(q, fullText, sources);
-      msgEl.innerHTML = renderMarkdown(fullText) + renderSources(sources) +
+      msgEl.innerHTML = renderRoute(route) + renderMarkdown(fullText) + renderSources(sources) +
         `<button class="save-note-btn" onclick="saveNote(${noteId})">💾 Save</button>`;
     }
     saveHistory();
@@ -927,15 +933,29 @@ async function sendQuery() {
   }
 }
 
-// ── Deep mode toggle (per-browser preference) ──────────────────────────────
-const DEEP_KEY = 'docAnalyzerDeepMode';
+// ── Query mode: auto / standard / deep (per-browser preference) ────────────
+const MODE_KEY = 'docAnalyzerQueryMode';
+const LEGACY_DEEP_KEY = 'docAnalyzerDeepMode';  // checkbox used before the router
 
-function saveDeepMode(on) {
-  try { localStorage.setItem(DEEP_KEY, on ? '1' : '0'); } catch {}
+function saveQueryMode(mode) {
+  try { localStorage.setItem(MODE_KEY, mode); } catch {}
 }
 
-function loadDeepMode() {
-  try { document.getElementById('deepMode').checked = localStorage.getItem(DEEP_KEY) === '1'; } catch {}
+function loadQueryMode() {
+  let mode = 'auto';
+  try {
+    const saved = localStorage.getItem(MODE_KEY);
+    if (['auto', 'standard', 'deep'].includes(saved)) mode = saved;
+    else if (localStorage.getItem(LEGACY_DEEP_KEY) === '1') mode = 'deep';
+  } catch {}
+  document.getElementById('queryMode').value = mode;
+}
+
+// Shown on answers routed in Auto mode: which pipeline ran and why
+function renderRoute(route) {
+  if (!route) return '';
+  const mode = route.mode === 'deep' ? 'Deep' : 'Standard';
+  return `<div class="route-tag">${mode} · auto: ${escHtml(route.reason)}</div>`;
 }
 
 function renderSources(sources) {
@@ -1231,7 +1251,7 @@ function exportChat() {
   URL.revokeObjectURL(a.href);
 }
 
-loadDeepMode();
+loadQueryMode();
 init();
 
 // Restore history after init so the UI is ready

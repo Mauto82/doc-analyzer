@@ -182,3 +182,54 @@ def test_query_deep_returns_joined_text():
 ])
 def test_is_empty_note(note, empty):
     assert RAGProcessor._is_empty_note(note) is empty
+
+
+# ── Auto routing ───────────────────────────────────────────────────────────────
+
+def test_auto_routes_targeted_question_to_standard():
+    rag = _make_rag([_point("x")])
+    rag.query_stream = MagicMock(return_value=iter([{"type": "text", "text": "std"}]))
+
+    events = list(rag.query_stream_auto("Chi è il fornitore?", [DEFAULT_COLLECTION]))
+
+    assert events[0] == {"type": "route", "mode": "standard", "reason": "targeted question"}
+    assert events[1] == {"type": "text", "text": "std"}
+    assert _map_prompts(rag) == []
+
+
+def test_auto_routes_summary_to_deep():
+    rag = _make_rag([_point("x")])
+    events = list(rag.query_stream_auto("Riassumi il documento", [DEFAULT_COLLECTION]))
+
+    assert events[0] == {"type": "route", "mode": "deep", "reason": "summary"}
+    assert len(_map_prompts(rag)) == 1
+    assert events[-1] == {"type": "text", "text": "final"}
+
+
+def test_auto_falls_back_to_standard_when_too_large():
+    points = [_point("x" * 10, chunk_index=i) for i in range(5)]
+    rag = _make_rag(points, block_chars=10, deep_max_blocks=3)
+    rag.query_stream = MagicMock(return_value=iter([{"type": "text", "text": "std"}]))
+
+    events = list(rag.query_stream_auto("Riassumi il documento", [DEFAULT_COLLECTION]))
+
+    assert events[0]["mode"] == "standard"
+    assert "too large" in events[0]["reason"]
+    assert _map_prompts(rag) == []
+
+
+def test_auto_invalid_role():
+    rag = _make_rag([_point("x")])
+    with pytest.raises(ValueError, match="Invalid role"):
+        list(rag.query_stream_auto("q", [DEFAULT_COLLECTION], role="nope"))
+
+
+def test_query_mode_auto():
+    rag = _make_rag([_point("x")])
+    assert rag.query("Riassumi il documento", mode="auto") == "final"
+
+
+def test_query_invalid_mode():
+    rag = _make_rag([_point("x")])
+    with pytest.raises(ValueError, match="Invalid mode"):
+        rag.query("q", mode="turbo")

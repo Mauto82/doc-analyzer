@@ -15,6 +15,7 @@ from src.config.prompts import (
     registry as prompt_registry,
 )
 from src.models.document import Document
+from src.services.query_router import Route, route_question
 
 DEFAULT_COLLECTION = "default"
 
@@ -268,10 +269,7 @@ class RAGProcessor:
           {"type": "sources", "sources": [...]}   — emitted once before text
           {"type": "text",    "text": "token"}    — one per LLM token
         """
-        if role not in prompt_registry:
-            raise ValueError(
-                f"Invalid role. Must be one of: {', '.join(prompt_registry.keys())}"
-            )
+        self._check_role(role)
 
         query_model = model or self.model_name
         query_embedding = self._embed_single(question)
@@ -348,24 +346,54 @@ class RAGProcessor:
         Yields the same events as query_stream, plus:
           {"type": "progress", "stage": "map"|"reduce", "done": n, "total": m}
         """
-        if role not in prompt_registry:
-            raise ValueError(
-                f"Invalid role. Must be one of: {', '.join(prompt_registry.keys())}"
-            )
-
-        query_model = model or self.model_name
+        self._check_role(role)
         blocks = self._build_blocks(collections)
-        if not blocks:
-            yield {"type": "text", "text": (
-                "I couldn't find any documents in the selected collections."
-            )}
-            return
         if len(blocks) > self._deep_max_blocks:
             raise ValueError(
                 f"Selected documents are too large for deep mode "
                 f"({len(blocks)} blocks, limit {self._deep_max_blocks}). "
                 "Select fewer collections or raise DEEP_MAX_BLOCKS."
             )
+        yield from self._deep_stream(question, blocks, role, model)
+
+    def query_stream_auto(
+        self,
+        question: str,
+        collections: List[str],
+        role: str = "default",
+        model: Optional[str] = None,
+    ) -> Generator[dict, None, None]:
+        """
+        Route the question to standard or deep mode (see query_router), then
+        delegate. Emits first:
+          {"type": "route", "mode": "standard"|"deep", "reason": str}
+        Falls back to standard when the documents exceed DEEP_MAX_BLOCKS.
+        """
+        self._check_role(role)
+        route = route_question(question)
+        if route.mode == "deep":
+            blocks = self._build_blocks(collections)
+            if len(blocks) <= self._deep_max_blocks:
+                yield {"type": "route", "mode": "deep", "reason": route.reason}
+                yield from self._deep_stream(question, blocks, role, model)
+                return
+            route = Route("standard", f"too large for deep mode ({len(blocks)} blocks)")
+        yield {"type": "route", "mode": "standard", "reason": route.reason}
+        yield from self.query_stream(question, collections, role, model)
+
+    def _deep_stream(
+        self,
+        question: str,
+        blocks: List[Tuple[str, str]],
+        role: str,
+        model: Optional[str],
+    ) -> Generator[dict, None, None]:
+        query_model = model or self.model_name
+        if not blocks:
+            yield {"type": "text", "text": (
+                "I couldn't find any documents in the selected collections."
+            )}
+            return
 
         # Map: extract question-relevant notes from every block
         total = len(blocks)
@@ -426,6 +454,13 @@ class RAGProcessor:
             question=question,
         )
         yield from self._stream_answer(query_model, prompt)
+
+    @staticmethod
+    def _check_role(role: str) -> None:
+        if role not in prompt_registry:
+            raise ValueError(
+                f"Invalid role. Must be one of: {', '.join(prompt_registry.keys())}"
+            )
 
     def _load_file_chunks(self, collections: List[str]) -> Dict[Tuple[str, str], List[dict]]:
         """Return {(collection, file_name): [payload, ...]} in original document order."""
@@ -554,14 +589,27 @@ class RAGProcessor:
         role: str = "default",
         model: Optional[str] = None,
         deep: bool = False,
+        mode: Optional[str] = None,
     ) -> str:
+        """mode: "standard" | "deep" | "auto"; when omitted, `deep` decides."""
         cols = collections if collections is not None else [DEFAULT_COLLECTION]
-        stream = self.query_stream_deep if deep else self.query_stream
+        stream = self.stream_for_mode(mode or ("deep" if deep else "standard"))
         return "".join(
             item["text"]
             for item in stream(question, cols, role, model)
             if item.get("type") == "text"
         )
+
+    def stream_for_mode(self, mode: str):
+        """Return the query_stream* method that implements `mode`."""
+        streams = {
+            "standard": self.query_stream,
+            "deep": self.query_stream_deep,
+            "auto": self.query_stream_auto,
+        }
+        if mode not in streams:
+            raise ValueError(f"Invalid mode '{mode}'. Must be one of: {', '.join(streams)}")
+        return streams[mode]
 
     # ── Models ────────────────────────────────────────────────────────────────
 

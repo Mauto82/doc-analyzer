@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.9.0] - 2026-10-15
+
+Feature release: **Auto mode** — router che sceglie standard o deep mode in base alla domanda.
+
+### Router
+
+- Nuovo `src/services/query_router.py` — `route_question()` basato su regole (italiano e inglese), deterministico e istantaneo, senza chiamate LLM aggiuntive. Instrada su deep le domande di tipo riassunto, conteggio, confronto, elenco esaustivo e documento intero; tutto il resto su standard
+  - Gestiti i falsi positivi tipici: "compare" italiano (= appare), "all'articolo", "contatore"/"account", domande sì/no come "tutti i dati sono cifrati?"
+- Nuovo `RAGProcessor.query_stream_auto()` — emette `{"type": "route", "mode", "reason"}` e delega; se i documenti superano `DEEP_MAX_BLOCKS` ripiega su standard invece di dare errore
+- `query_stream_deep()` diviso in controllo dimensione + `_deep_stream()`, così auto riusa i blocchi già calcolati
+- API: nuovo campo `mode` (`standard` | `deep` | `auto`) su `/api/query` e `/api/query/stream`; `deep: true` resta supportato come alias di `mode: deep`. Modalità non valide → 422
+
+### UI
+
+- Il checkbox **Deep** diventa un selettore **Auto / Standard / Deep** (default Auto). La preferenza precedente "Deep attivo" viene migrata
+- Ogni risposta in Auto mostra percorso e motivo, es. *Deep · auto: exhaustive list*
+
+### Test: da 241 a 279
+
+- `tests/unit/test_query_router.py` — **29 casi** (18 deep con motivo atteso, 11 standard inclusi i falsi positivi)
+- **6 nuovi test** su `query_stream_auto` e `query(mode=…)`, **3 nuovi test** endpoint (auto, precedenza di `mode` su `deep`, modalità non valida)
+
+---
+
 ## [0.8.1] - 2026-10-15
 
 Fix release: sicurezza frontend, errori non più nascosti, embedding in batch.

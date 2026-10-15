@@ -164,4 +164,41 @@ def test_query_passes_deep_flag(app_client):
     res = client.post("/api/query", json={"question": "q", "deep": True})
 
     assert res.status_code == 200
-    assert mock_rag.query.call_args.kwargs["deep"] is True
+    assert mock_rag.query.call_args.kwargs["mode"] == "deep"
+
+
+def test_stream_auto_mode_uses_router_pipeline(app_client):
+    client, mock_rag, _ = app_client
+    _seed_file(client)
+    mock_rag.query_stream_auto.return_value = iter([
+        {"type": "route", "mode": "deep", "reason": "summary"},
+        {"type": "text", "text": "ok"},
+    ])
+
+    with client.stream("POST", "/api/query/stream",
+                       json={"question": "riassumi", "mode": "auto"}) as resp:
+        raw = resp.read().decode()
+
+    mock_rag.query_stream_auto.assert_called_once()
+    mock_rag.query_stream.assert_not_called()
+    assert '"type": "route"' in raw
+
+
+def test_explicit_mode_overrides_deep_flag(app_client):
+    client, mock_rag, _ = app_client
+    _seed_file(client)
+    mock_rag.query_stream.return_value = _text_events("ok")
+
+    with client.stream("POST", "/api/query/stream",
+                       json={"question": "q", "mode": "standard", "deep": True}) as resp:
+        resp.read()
+
+    mock_rag.query_stream.assert_called_once()
+    mock_rag.query_stream_deep.assert_not_called()
+
+
+def test_invalid_mode_rejected(app_client):
+    client, mock_rag, _ = app_client
+    _seed_file(client)
+    res = client.post("/api/query/stream", json={"question": "q", "mode": "turbo"})
+    assert res.status_code == 422
